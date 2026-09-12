@@ -792,3 +792,53 @@ textarea{width:100%;border-radius:13px;background:rgba(46,144,232,.06);padding:1
 
 /* 设置按钮样式（替代定时） */
 .addtimer{flex:1 1 auto;min-width:0;white-space:nowrap;background:linear-gradient(135deg,#9ED0FF,#7FB8FF);color:#0d4f86;font-weight:800;border-radius:11px;padding:0 14px;height:36px}
+
+/* ===== v20 新增：学科自选 / 题量设置 / 专业课 ===== */
+.card-x{width:24px;height:24px;border-radius:8px;background:rgba(120,120,140,.14);color:var(--ink2);font-size:13px;line-height:1;border:none;flex:0 0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;margin-left:8px}
+.card-x:active{transform:scale(.9);background:rgba(255,123,146,.22);color:#E5476A}
+.set-line.col{flex-direction:column;align-items:stretch;gap:7px}
+.set-line.col>span{font-size:13px;font-weight:800;color:var(--ink)}
+.set-line textarea{width:100%;border-radius:11px;background:rgba(46,144,232,.05);border:1px solid rgba(46,144,232,.18);padding:9px 11px;font-size:12.5px;line-height:1.7;color:var(--ink);font-weight:600;resize:vertical;box-sizing:border-box}
+.hint.ok{color:#1F9E7A;font-weight:800}
+.seg-row{display:flex;flex-wrap:wrap;gap:10px}
+.seg{position:relative;display:inline-flex;align-items:center;gap:7px;padding:11px 18px;border:1.6px solid var(--line);border-radius:13px;font-size:13.5px;font-weight:800;color:var(--ink2);background:#fff;cursor:pointer;transition:all .15s;user-select:none}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg .ck{width:19px;height:19px;border-radius:50%;border:2px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:transparent;transition:all .15s;flex:0 0 auto}
+.seg.on{border-color:var(--ink);color:var(--ink)}
+.seg.on .ck{background:var(--brand);border-color:var(--brand);color:#fff}
+.seg:active{transform:scale(.97)}
+.cnt-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:12.5px;font-weight:700}
+.cnt-row:last-of-type{border:0}
+.cnt-label{flex:1;color:var(--ink)}
+.cnt-label small{color:var(--ink3);font-weight:600}
+.cnt-in{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+.cnt-in b{font-size:11px;color:var(--ink3);font-weight:800}
+.cnt-in input{width:56px;height:34px;border-radius:10px;background:rgba(46,144,232,.07);padding:0 6px;font-size:13px;font-weight:800;text-align:center;border:none}
+.maj-book-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--ink);background:rgba(46,144,232,.07);border-radius:11px;padding:8px 11px;margin-bottom:7px;flex-wrap:wrap}
+.mini-add{flex:0 0 auto;margin-left:auto;height:30px;padding:0 11px;border-radius:10px;background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;font-weight:800;font-size:11.5px;border:none;cursor:pointer}
+.mini-add:active{transform:scale(.95)}
+.star-btn{flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);background:#fff;color:#C9CDD6;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.star-btn.on{color:#FFB020;border-color:#FFD27A;background:#FFF6E6}
+.star-btn:active{transform:scale(.9)}
+.fav-box{background:linear-gradient(135deg,rgba(255,200,80,.16),rgba(255,170,40,.1));border:1px solid rgba(255,180,60,.35);border-radius:14px;padding:10px 12px;margin-bottom:12px}
+.fav-h{font-size:12.5px;font-weight:900;color:#E0962A;margin-bottom:8px}
+.fav-box .item{background:#fff}
+.mview-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.mview{flex:1;min-width:88px;height:34px;border-radius:11px;border:1.5px solid var(--line);background:#fff;color:var(--ink2);font-weight:800;font-size:12px;cursor:pointer;transition:all .15s}
+.mview.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.mview:active{transform:scale(.97)}
+.missing-box{background:linear-gradient(135deg,rgba(61,158,240,.12),rgba(104,200,247,.08));border:1px solid rgba(61,158,240,.32);border-radius:14px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;font-weight:700;color:#2A7FC4;line-height:1.6}
+.gen-btn{display:block;width:100%;margin-top:8px;height:36px;border:none;border-radius:11px;background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;transition:transform .12s}
+.gen-btn:active{transform:scale(.98)}
+.gen-btn:disabled{opacity:.65;cursor:default}
+.gen-hint{margin-top:6px;font-size:11.5px;font-weight:600;color:#5A85A8;line-height:1.5;min-height:14px}
+.ai-box{background:linear-gradient(135deg,rgba(160,132,232,.14),rgba(196,170,255,.08));border:1px solid rgba(150,120,220,.3);border-radius:14px;padding:9px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#6B52B8;line-height:1.55}
+/* AI 一键扩充区（英语 / 数学 / 专业课通用） */
+.ai-gen{margin-top:12px;margin-bottom:12px}
+.ai-gen-t{font-size:11.5px;font-weight:800;color:#6B52B8;margin-bottom:7px;opacity:.9}
+.gen-btn.slim{margin-top:6px;height:33px;font-size:12px;background:linear-gradient(135deg,#7A63D8,#A98CF5)}
+.ai-gen .gen-btn:first-of-type{margin-top:0}
+.jopts{display:flex;gap:8px;margin-top:8px}
+.jopts .opt{flex:1}
+.maj-add-row{margin-bottom:9px}
+.maj-pts{display:flex;flex-direction:column;gap:9px}

@@ -168,10 +168,12 @@
         <div class="tabs" data-tabs="major">
           <button class="tab on" data-t="p">知识点/公式</button>
           <button class="tab" data-t="c">选择题</button>
+          <button class="tab" data-t="j">判断题</button>
           <button class="tab" data-t="s">简答题</button>
         </div>
         <div id="majP" class="tabpage"></div>
         <div id="majC" class="tabpage hidden"></div>
+        <div id="majJ" class="tabpage hidden"></div>
         <div id="majS" class="tabpage hidden"></div>
       </section>
 
@@ -200,7 +202,13 @@
         </div>
 
         <div class="card">
-          <div class="card-t">🌸 经期记录</div>
+          <div class="card-t">💩 大便统计</div>
+          <button id="bowelQuick" class="pbtn bowel-quick">💩 记录今日大便</button>
+          <div class="bowel-row" id="bowelRow"></div>
+        </div>
+
+        <div class="card" id="periodCard">
+          <div class="card-t">🌸 经期记录<button class="card-x" id="periodDel" title="男生可隐藏此板块（保留记录）">✕</button></div>
           <div class="period-btns">
             <button id="pStart" class="pbtn start">记录经期开始</button>
             <button id="pEnd" class="pbtn end">记录经期结束</button>
@@ -208,12 +216,6 @@
           <div class="period-info" id="periodInfo"></div>
           <div class="period-hint">📅 点日历可编辑：点结束日改结束日 · 点开始日删除 · 点空白日新增经期</div>
           <div class="period-cal" id="periodCal"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-t">💩 大便统计</div>
-          <button id="bowelQuick" class="pbtn bowel-quick">💩 记录今日大便</button>
-          <div class="bowel-row" id="bowelRow"></div>
         </div>
 
         <div class="card">
@@ -225,6 +227,12 @@
         <div class="card">
           <div class="card-t">📊 本周作息概览</div>
           <div class="week-sleep" id="weekSleep"></div>
+        </div>
+
+        <div class="card hidden" id="periodRestoreCard">
+          <div class="card-t">🌸 经期记录</div>
+          <button id="periodRestore" class="pbtn">恢复经期记录板块</button>
+          <div class="hint">你之前隐藏了经期板块（历史记录已保留），点此可随时恢复。</div>
         </div>
       </section>
 
@@ -272,6 +280,17 @@
         </div>
 
         <div class="card">
+          <div class="card-t">🎓 我的学科（自选）</div>
+          <div id="subjectCard"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-t">📊 每日题量设置</div>
+          <div class="hint">轻松版数量需 ≤ 备考版；专业课选择 / 简答轻松版可为 0，备考版须 ≥ 1 且 ≥ 轻松版。修改即时生效。</div>
+          <div id="countCard"></div>
+        </div>
+
+        <div class="card">
           <div class="card-t">📅 考试日期</div>
           <label class="set-line">初试日期<input type="date" id="examDateInput"></label>
           <div class="hint">28考研初试预计为 2027 年 12 月中下旬，官方公布后可在此修正。</div>
@@ -307,7 +326,7 @@
         <div class="card about">
           <div class="card-t">🐱 关于</div>
           <p>喵上岸 · 28考研专属工作台</p>
-          <p class="hint">题库涵盖 英语一（考研必备词 5051 个 / 真题源 / 作文句型 / 阅读精翻 / 真题库）· 数学一（高数·线代·概率，每日更新轮换各科公式卡与题目）· 085403 集成电路专业课（模电+数电，每日更新选择题 / 简答题 / 知识点卡 / 公式速记）。题目与公式均为每天轮换更新，题源标注为考点出处与教材章节，用于定位复习范围。</p>
+          <p class="hint">本工作台完全由你自选科目与书目：英语一（图画作文）/ 英语二（图表作文），数学一（高数·线代·概率）/ 数学二（高数·线代，无概率论），专业课由你在「设置 → 我的学科」填写的教材书目自动生成知识点、公式、选择题与简答题。每日题目与公式均按日期轮换，题源标注考点出处与教材章节，帮助你精确定位复习范围。所有数据仅保存在本机浏览器，不上传、可随时导出备份。</p>
         </div>
       </section>
     </div>
@@ -323,6 +342,9 @@
 <script src="js/data-read-sentences.js"></script>
 <script src="js/data-math.js"></script>
 <script src="js/data-ic.js"></script>
+<script src="js/data-major-lib.js"></script>
+<script src="js/data-en-extra.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
