@@ -349,6 +349,7 @@
     $('#planFilter').onclick = (e) => { const c = e.target.closest('.chip'); if (c) draw(c.dataset.f); };
     $('#addTask').onclick = addTask;
     $('#addPlanTimer').onclick = () => openPlanModal({ text: $('#taskInput').value.trim(), date: planDate });
+    $('#planUnfin').onclick = openUnfinPage;
     $('#addCat').onclick = () => {
       const name = prompt('新建分类名称（例如：复试、科研、运动）');
       if (!name) return;
@@ -365,6 +366,47 @@
       ? `<div class="carry-t">⚠ 昨日未完成的 ${carry.length} 项已顺延到今天</div>` +
       carry.map((x) => `<div class="task ${x.done ? 'done' : ''} ${x.pri}"><div class="tk-body"><div class="tk-text">${esc(x.text)}</div><div class="tk-meta"><span class="tk-tag carry">顺延</span></div></div></div>`).join('')
       : '';
+  }
+
+  /* —— ⚠ 以往未完成的计划（不含当天，可点击跳转到对应日期） —— */
+  const UNFIN_LOOKBACK = 180;                       // 最多回溯 180 天，避免极端数据下卡顿
+  function pastUnfinished() {
+    const t = todayStr();
+    const limit = shiftDay(t, -UNFIN_LOOKBACK);
+    let start = '';
+    Object.keys(store.plan || {}).forEach((k) => { if (k < t && (!start || k < start)) start = k; });
+    (store.planTpl || []).forEach((tp) => { if (tp.date && tp.date < t && (!start || tp.date < start)) start = tp.date; });
+    if (!start) return [];
+    if (start < limit) start = limit;
+    const groups = [];
+    let cur = start, guard = 0;
+    while (cur < t && guard++ <= UNFIN_LOOKBACK + 2) {
+      const items = effTasks(cur).filter((x) => !x.done);
+      if (items.length) groups.push({ ds: cur, items });
+      cur = shiftDay(cur, 1);
+    }
+    return groups.reverse();                        // 最近的日期排在前面
+  }
+  function openUnfinPage() {
+    const groups = pastUnfinished();
+    const total = groups.reduce((s, g) => s + g.items.length, 0);
+    const body = total
+      ? `<div class="unfin-tip">共 <b>${total}</b> 项以往未完成的计划（不含今天）· 点击任意一项可跳转到当天的计划页</div>` +
+        groups.map((g) => `<div class="unfin-day">
+          <div class="unfin-date">${g.ds.slice(5).replace('-', '/')} · 周${WD_CN[new Date(g.ds + 'T00:00:00').getDay()]}<span>${g.items.length} 项未完成</span></div>
+          ${g.items.map((x) => `<div class="unfin-item" data-unfin="${g.ds}"><div class="ui-t">${esc(x.text)}</div>${x.carry ? '<span class="ui-tag">顺延</span>' : ''}</div>`).join('')}
+        </div>`).join('')
+      : `<div class="empty"><div class="e-cat">🎉</div>以往没有未完成的计划，太棒啦</div>`;
+    openModal('⚠ 以往未完成的计划', body);
+    const mask = document.getElementById('modalMask');
+    if (!mask) return;
+    Array.from(mask.querySelectorAll('[data-unfin]')).forEach((el) => {
+      el.onclick = () => {
+        mask.classList.add('hidden');
+        planDate = el.dataset.unfin;                // 跳到该计划所在的那一天
+        goPage('plan');
+      };
+    });
   }
 
   /* —— 定时/重复 任务 —— */
@@ -1017,7 +1059,7 @@
         <button class="sr-fav ${sfav ? 'on' : ''}" data-srfav="${si}">${sfav ? '★ 已标星' : '☆ 标星（入一轮强化）'}</button>`;
       res.querySelector('[data-srfav]').onclick = () => {
         const i = +res.querySelector('[data-srfav]').dataset.srfav;
-        if (ws.favs.includes(i)) { toast('这个单词已经标过星啦'); return; }
+        if (ws.favs.includes(i)) { toast('这个单词已经标过星啦', 'main'); return; }
         ws.favs.push(i);
         if (!ws.rounds.flat().includes(i)) ws.rounds[0].push(i);
         save(); renderEnWord();
@@ -1034,11 +1076,13 @@
     host.querySelector('[data-w="prev"]').onclick = () => { enRevealed = false; ws.idx = (idx - 1 + EN_WORDS.length) % EN_WORDS.length; save(); renderEnWord(); };
     host.querySelector('[data-w="next"]').onclick = () => { enRevealed = false; ws.idx = (idx + 1) % EN_WORDS.length; save(); renderEnWord(); };
     host.querySelector('[data-w="jumpcur"]').onclick = () => {
-      // 回到第一个未背单词的位置（前面都是已背的）
-      const firstUnlearned = ws.learned.length;
-      if (firstUnlearned >= EN_WORDS.length) { toast('全部单词已背完啦！'); return; }
+      // 回到「第一个未背单词」：取编号最小的未背单词（不是已背单词的个数位置）
+      const learnedSet = new Set(ws.learned);
+      let firstUnlearned = -1;
+      for (let i = 0; i < EN_WORDS.length; i++) { if (!learnedSet.has(i)) { firstUnlearned = i; break; } }
+      if (firstUnlearned < 0) { toast('全部单词已背完啦！', 'main'); return; }
       ws.idx = firstUnlearned; slider.value = ws.idx; enRevealed = false; save(); renderEnWord();
-      toast('已回到第 ' + (ws.idx + 1) + ' 个单词（首个未背）');
+      toast('已回到第 ' + (firstUnlearned + 1) + ' 个单词（首个未背）', 'main');
     };
     host.querySelector('[data-w="reveal"]').onclick = () => { enRevealed = !enRevealed; renderEnWord(); };
     host.querySelector('[data-w="learned"]').onclick = () => {
@@ -1064,7 +1108,7 @@
     const spBtn = host.querySelector('[data-spellpage]');
     if (spBtn) spBtn.onclick = () => openSpellPage();
     const rfb = host.querySelector('[data-w="refresh"]');
-    if (rfb) rfb.onclick = () => { ws.idx = 0; ws.learned = []; save(); renderEnWord(); toast('已重置，从头开始背 🐱'); };
+    if (rfb) rfb.onclick = () => { ws.idx = 0; ws.learned = []; save(); renderEnWord(); toast('已重置，从头开始背 🐱', 'main'); };
   }
   function totalWords() { return Object.values(store.dailyStudy).reduce((s, x) => s + (x.en.wordCount || 0), 0); }
 
@@ -1833,9 +1877,7 @@
     }
     $('#pStart').onclick = () => { if (open) { toast('已在进行中'); return; } store.periods.push({ start: t, end: null }); save(); renderLife(); };
     $('#pEnd').onclick = () => { if (!open) { toast('请先记录开始'); return; } open.end = t; save(); renderLife(); };
-    $('#periodList').innerHTML = store.periods.slice().reverse().slice(0, 8).map((p, i) =>
-      `<div class="prec"><span>${p.start} ${p.end ? '~ ' + p.end + '（' + (dayDiff(p.start, p.end) + 1) + '天）' : '（进行中）'}</span><button data-pdel="${store.periods.indexOf(p)}">✕</button></div>`).join('');
-    $$('#periodList [data-pdel]').forEach((b) => b.onclick = () => { store.periods.splice(+b.dataset.pdel, 1); save(); renderLife(); });
+    // 经期日期列表已按需求移除（日期只在日历上用粉色标注体现，避免与日历重复）
     // 经期日历（粉色标注 + 左右滑动看其他月 + 点格子编辑）
     const ym = periodCalYM, y = Math.floor(ym / 12), m = ym % 12;
     const mark = (ds) => isPeriodDay(ds) ? 'pink' : '';
@@ -1929,22 +1971,41 @@
   }
 
   // —— 日期范围与数据聚合（供自动复盘使用）——
+  // 周范围：以 base 所在周的周一为起点共 7 天；clampToday=true 时只到今天（不把未来日期算进统计）
+  function weekDates(base, clampToday) {
+    const d = base ? new Date(base) : new Date();
+    const dow = d.getDay(); const diff = (dow === 0 ? 6 : dow - 1);
+    const mon = new Date(d); mon.setDate(d.getDate() - diff);
+    const today = todayStr();
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const x = new Date(mon); x.setDate(mon.getDate() + i);
+      const k = dateKey(x);
+      if (clampToday && k > today) break;
+      out.push(k);
+    }
+    return out;
+  }
   function rangeDates(kind, anchor) {
     const d = anchor ? new Date(anchor) : new Date();
-    const today = todayStr();
-    if (kind === 'week') {
-      const dow = d.getDay(); const diff = (dow === 0 ? 6 : dow - 1);
-      const mon = new Date(d); mon.setDate(d.getDate() - diff);
-      const out = [];
-      for (let i = 0; i < 7; i++) { const x = new Date(mon); x.setDate(mon.getDate() + i); const k = dateKey(x); if (k > today) break; out.push(k); }
-      return out;
-    }
+    if (kind === 'week') return weekDates(d, true);
     const start = new Date(d.getFullYear(), d.getMonth(), 1);
     const isCurMonth = (d.getFullYear() === new Date().getFullYear() && d.getMonth() === new Date().getMonth());
     const end = isCurMonth ? new Date() : new Date(d.getFullYear(), d.getMonth() + 1, 0);
     const out = [];
     for (let x = new Date(start); x <= end; x.setDate(x.getDate() + 1)) out.push(dateKey(new Date(x)));
     return out;
+  }
+  // 某天的计划统计：必须用 effTasks（含定时/重复模板实例），否则模板任务永远统计为 0/0
+  function planStats(ds) {
+    const list = effTasks(ds);
+    return { total: list.length, done: list.filter((x) => x.done).length };
+  }
+  // 某天是否算「有学习」：有英语（背词/阅读精读）、数学、专业课任一记录才算
+  function studiedOn(ds) {
+    const d = store.dailyStudy[ds]; if (!d) return false;
+    const en = d.en || {}, mt = d.math || {}, mj = d.major || {};
+    return !!(en.wordCount || en.readCount || mt.qDone || mj.qDone);
   }
   function countPeriodDays(dates) {
     if (!store.periods.length) return 0;
@@ -1961,13 +2022,14 @@
     let words = 0, math = 0, major = 0, readCount = 0, studyDays = 0, checkinDays = 0;
     let exerciseDays = 0, waterSum = 0, waterDays = 0, sleepSum = 0, sleepDays = 0, bowel = 0;
     let planDone = 0, planTotal = 0;
+    const noStudy = [];   // 没有任何学习记录的日期
     dates.forEach((k) => {
       const ds = store.dailyStudy[k];
       if (ds) {
-        const w = ds.en.wordCount || 0, m = ds.math.qDone || 0, ma = ds.major.qDone || 0;
-        words += w; math += m; major += ma; readCount += ds.en.readCount || 0;
-        if (w || m || ma) studyDays++;
+        const w = (ds.en && ds.en.wordCount) || 0, m = (ds.math && ds.math.qDone) || 0, ma = (ds.major && ds.major.qDone) || 0;
+        words += w; math += m; major += ma; readCount += (ds.en && ds.en.readCount) || 0;
       }
+      if (studiedOn(k)) studyDays++; else noStudy.push(k);
       if (store.checkins[k]) checkinDays++;
       const lf = store.life[k];
       if (lf) {
@@ -1979,42 +2041,46 @@
         }
         bowel += lf.bowel || 0;
       }
-      const pl = store.plan[k];
-      if (pl) pl.forEach((p) => { planTotal++; if (p.done) planDone++; });
+      const ps = planStats(k);            // 含直接任务 + 定时/重复模板实例
+      planTotal += ps.total; planDone += ps.done;
     });
     return { words, math, major, readCount, studyDays, checkinDays, exerciseDays,
       avgWater: waterDays ? (waterSum / waterDays).toFixed(1) : '—',
       avgSleep: sleepDays ? (sleepSum / sleepDays / 60).toFixed(1) : '—',
-      bowel, planDone, planTotal, periodDays: countPeriodDays(dates), days: dates.length,
+      bowel, planDone, planTotal, noStudy, noStudyDays: noStudy.length,
+      periodDays: countPeriodDays(dates), days: dates.length,
       cycleCount: countCycles(dates) };
   }
   function genWeekAuto(anchor) {
     const dates = rangeDates('week', anchor);
     const a = aggregate(dates);
-    const missC = a.days - a.checkinDays, gap = a.days - a.studyDays;
+    const missC = a.days - a.checkinDays, gap = a.noStudyDays;
     const probs = [];
     if (missC > 0) probs.push(`有 ${missC} 天未打卡，建议坚持每日打卡保持连续状态`);
-    if (gap > 0) probs.push(`有 ${gap} 天没有学习记录，注意学习的连贯性`);
+    if (gap > 0) probs.push(`有 ${gap} 天没有学习记录（${a.noStudy.slice(-5).map((k) => k.slice(5).replace('-', '/')).join('、')}），注意学习的连贯性`);
     if (!probs.length) probs.push('整体保持良好，学习节奏稳定，继续保持 💪');
+    // 下周计划总数（下周一~周日，含未来日期，按模板与直接任务计算）
+    const nwDates = weekDates(addDays(anchor ? new Date(anchor) : new Date(), 7), false);
+    let nwTotal = 0; nwDates.forEach((k) => { nwTotal += planStats(k).total; });
     return {
       work: `本周（${dates[0]} ~ ${dates[dates.length - 1]}）共学习 ${a.studyDays} 天、打卡 ${a.checkinDays} 天，完成计划 ${a.planDone}/${a.planTotal} 项。`,
       study: `累计背词 ${a.words} 个、数学作答 ${a.math} 题、专业课题 ${a.major} 题、阅读精读 ${a.readCount} 篇。`,
       life: `运动 ${a.exerciseDays} 天、平均饮水 ${a.avgWater} 杯、平均睡眠 ${a.avgSleep} 小时、大便 ${a.bowel} 次、经期 ${a.periodDays} 天。`,
       prob: probs.join('；') + '。',
       fix: `① 保持每日打卡；② 针对薄弱项增加专项训练；③ 规律作息，保证约 ${a.avgSleep !== '—' ? a.avgSleep : '7.5'} 小时睡眠。`,
-      goal: `完成本周未完成计划 ${Math.max(0, a.planTotal - a.planDone)} 项；每日背词≥目标，数学 / 专业课保持题量，阅读不中断。`,
+      goal: `完成本周未完成计划 ${Math.max(0, a.planTotal - a.planDone)} 项；完成下周计划 ${nwTotal} 项；每日背词≥目标，数学 / 专业课保持题量，阅读不中断。`,
     };
   }
   function genMonthAuto(anchor) {
     const dates = rangeDates('month', anchor);
     const a = aggregate(dates);
-    const missC = a.days - a.checkinDays, gap = a.days - a.studyDays;
+    const missC = a.days - a.checkinDays, gap = a.noStudyDays;
     const probs = [];
     if (missC > 0) probs.push(`当月有 ${missC} 天未打卡`);
-    if (gap > 0) probs.push(`有 ${gap} 天没有学习记录`);
+    if (gap > 0) probs.push(`有 ${gap} 天没有学习记录（${a.noStudy.slice(-6).map((k) => k.slice(5).replace('-', '/')).join('、')}）`);
     if (!probs.length) probs.push('当月学习节奏稳定，值得肯定 🌟');
     let wTotal = 0, mTotal = 0, majTotal = 0;
-    Object.values(store.dailyStudy).forEach((x) => { wTotal += x.en.wordCount || 0; mTotal += x.math.qDone || 0; majTotal += x.major.qDone || 0; });
+    Object.values(store.dailyStudy).forEach((x) => { wTotal += (x.en && x.en.wordCount) || 0; mTotal += (x.math && x.math.qDone) || 0; majTotal += (x.major && x.major.qDone) || 0; });
     const checkinN = Object.keys(store.checkins).length;
     const streak = calcStreak();
     return {

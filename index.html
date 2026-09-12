@@ -109,7 +109,10 @@
             <input type="date" id="planDatePick" class="plan-datepick" title="选择任意日期制定计划">
             <div class="ph-sum" id="planSum">还没有计划</div>
           </div>
-          <div class="ph-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" class="ring-bg"/><circle cx="20" cy="20" r="16" class="ring-fg" id="planRing"/></svg><span id="planPct">0%</span></div>
+          <div class="ph-right">
+            <button class="ph-warn" id="planUnfin" title="查看以往未完成的计划">⚠</button>
+            <div class="ph-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" class="ring-bg"/><circle cx="20" cy="20" r="16" class="ring-fg" id="planRing"/></svg><span id="planPct">0%</span></div>
+          </div>
         </div>
 
         <div class="add-box">
@@ -204,7 +207,6 @@
           </div>
           <div class="period-info" id="periodInfo"></div>
           <div class="period-hint">📅 点日历可编辑：点结束日改结束日 · 点开始日删除 · 点空白日新增经期</div>
-          <div class="period-list" id="periodList"></div>
           <div class="period-cal" id="periodCal"></div>
         </div>
 

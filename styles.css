@@ -228,6 +228,20 @@ input,textarea,select{-webkit-appearance:none;appearance:none}
 .ring-bg{fill:none;stroke:rgba(46,144,232,.14);stroke-width:5}
 .ring-fg{fill:none;stroke:url(#g);stroke:#3D9EF0;stroke-width:5;stroke-linecap:round;stroke-dasharray:100.5;stroke-dashoffset:100.5;transition:stroke-dashoffset .6s ease}
 .ph-ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:900;color:var(--brand)}
+/* 计划页右上：历史未完成计划入口 + 完成度圆环 */
+.ph-right{display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto}
+.ph-warn{width:27px;height:27px;border-radius:10px;border:none;font-size:14px;line-height:1;font-weight:900;color:#fff;
+  background:linear-gradient(135deg,#FFC98A,#FF9A6B);box-shadow:0 3px 9px rgba(232,140,70,.3);display:flex;align-items:center;justify-content:center}
+.ph-warn:active{transform:scale(.9)}
+/* 历史未完成计划（弹窗页） */
+.unfin-tip{font-size:12px;font-weight:700;color:var(--ink3);background:rgba(255,187,120,.16);border-radius:11px;padding:9px 11px;margin-bottom:10px;line-height:1.5}
+.unfin-day{margin-bottom:13px}
+.unfin-date{font-size:12.5px;font-weight:900;color:var(--ink2);display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.unfin-date span{font-size:11px;font-weight:700;color:#E8845B;background:rgba(255,187,120,.2);border-radius:8px;padding:2px 7px}
+.unfin-item{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.72);border-radius:12px;padding:9px 11px;margin-bottom:6px;border:1px solid rgba(255,255,255,.9)}
+.unfin-item:active{transform:scale(.985);background:rgba(255,214,168,.35)}
+.ui-t{flex:1;font-size:12.5px;font-weight:700;color:var(--ink1);line-height:1.45;word-break:break-word}
+.ui-tag{flex:0 0 auto;font-size:10px;font-weight:800;color:#E8845B;background:rgba(255,187,120,.22);border-radius:7px;padding:2px 6px}
 
 .add-box{background:var(--card);border:1px solid rgba(255,255,255,.85);border-radius:18px;padding:12px;margin-top:11px;box-shadow:var(--shadow2)}
 .add-box input[type=text]{width:100%;height:40px;border-radius:12px;background:rgba(46,144,232,.07);padding:0 12px;font-size:13.5px;font-weight:600}
