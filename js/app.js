@@ -206,6 +206,9 @@
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; $('#pwaTip').textContent = '💡 点「进入工作台」后可安装到主屏幕像 App 使用'; });
     window._pwaDefer = deferred;
 
+    // 已打包的 APK（Capacitor 环境）中隐藏「添加到手机主屏幕」板块
+    if (window.Capacitor) { const _c = document.getElementById('pwaInstallCard'); if (_c) _c.style.display = 'none'; }
+
     $('#enterBtn').addEventListener('click', () => {
       const sp = $('#splash');
       sp.classList.add('out');
