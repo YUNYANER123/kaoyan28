@@ -112,7 +112,7 @@
       majorFavs: { points: [], choice: [], judge: [], short: [] },  // 专业课收藏（知识点/选择题/判断题/简答题）
       weekReviews: [],
       monthReviews: [],
-      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: 'https://kaoyan-ai-proxy-layjuofkzw.cn-chengdu.fcapp.run', aiModel: 'deepseek-chat' },
+      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: 'https://kaoyan-ai-proxy-layjuofkzw.cn-chengdu.fcapp.run', aiModel: 'deepseek-chat', aiProxyToken: '' },
       modeCounts: {
         enRead: { easy: 2, hard: 5 },
         enTrans: { easy: 3, hard: 3 },
@@ -2096,9 +2096,11 @@
       ],
       stream: true
     };
+    const headers = { 'Content-Type': 'application/json' };
+    if (s.aiProxyToken) headers['x-api-key'] = s.aiProxyToken;
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body)
     });
     if (!resp.ok) {
@@ -3246,17 +3248,21 @@
     const box = document.getElementById('aiProxyCard');
     if (!box) return;
     box.innerHTML = `
-      <div class="set-line col"><span>代理地址（你的 Worker URL）</span>
+      <div class="set-line col"><span>代理地址（国内代理 URL）</span>
         <input id="aiProxyUrl" type="url" placeholder="https://你的代理域名（国内节点，无需 /v1 路径）" value="${esc(s.aiProxyUrl || '')}">
       </div>
       <div class="set-line col"><span>模型名</span>
         <input id="aiModel" type="text" placeholder="deepseek-chat" value="${esc(s.aiModel || 'deepseek-chat')}">
+      </div>
+      <div class="set-line col"><span>访问口令（防陌生人使用，选填）</span>
+        <input id="aiProxyToken" type="password" placeholder="仅当代理开了 AUTH_TOKEN 时填写" value="${esc(s.aiProxyToken || '')}">
       </div>
       <div class="hint">非官方域名（GitHub Pages / 安卓安装包）下，AI 通过你自己的 国内代理（阿里云函数计算 / 腾讯云 Web 函数 / 国内 VPS）调用 DeepSeek，Key 仅存于服务端、不会进入安装包。部署方法见项目 README 的「AI 代理」一节。</div>
       <div class="hint" id="aiProxyMode">${modeTxt}</div>
       <div class="btn-row"><button class="gbtn" id="aiProxySave">保存</button><button class="gbtn" id="aiProxyTest">测试连接</button></div>`;
     document.getElementById('aiProxyUrl').onchange = () => { s.aiProxyUrl = document.getElementById('aiProxyUrl').value.trim(); save(); renderAiProxyCard(); };
     document.getElementById('aiModel').onchange = () => { s.aiModel = document.getElementById('aiModel').value.trim() || 'deepseek-chat'; save(); renderAiProxyCard(); };
+    document.getElementById('aiProxyToken').onchange = () => { s.aiProxyToken = document.getElementById('aiProxyToken').value.trim(); save(); renderAiProxyCard(); };
     document.getElementById('aiProxySave').onclick = () => { toast('AI 代理设置已保存'); };
     document.getElementById('aiProxyTest').onclick = async () => {
       const url = s.aiProxyUrl;
@@ -3265,9 +3271,11 @@
       if (!/^https?:\/\//.test(url)) { toast('请先填写代理地址'); return; }
       btn.disabled = true; btn.textContent = '测试中…';
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (s.aiProxyToken) headers['x-api-key'] = s.aiProxyToken;
         const resp = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ model: s.aiModel || 'deepseek-chat', messages: [{ role: 'system', content: '只回复 OK' }, { role: 'user', content: 'ping' }], stream: false })
         });
         const j = await resp.json().catch(() => ({}));
