@@ -112,7 +112,7 @@
       majorFavs: { points: [], choice: [], judge: [], short: [] },  // 专业课收藏（知识点/选择题/判断题/简答题）
       weekReviews: [],
       monthReviews: [],
-      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: '', aiModel: 'deepseek-chat' },
+      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: 'https://kaoyan-ai-proxy-layjuofkzw.cn-chengdu.fcapp.run', aiModel: 'deepseek-chat' },
       modeCounts: {
         enRead: { easy: 2, hard: 5 },
         enTrans: { easy: 3, hard: 3 },
@@ -3247,12 +3247,12 @@
     if (!box) return;
     box.innerHTML = `
       <div class="set-line col"><span>代理地址（你的 Worker URL）</span>
-        <input id="aiProxyUrl" type="url" placeholder="https://你的子域.workers.dev/v1/chat/completions" value="${esc(s.aiProxyUrl || '')}">
+        <input id="aiProxyUrl" type="url" placeholder="https://你的代理域名（国内节点，无需 /v1 路径）" value="${esc(s.aiProxyUrl || '')}">
       </div>
       <div class="set-line col"><span>模型名</span>
         <input id="aiModel" type="text" placeholder="deepseek-chat" value="${esc(s.aiModel || 'deepseek-chat')}">
       </div>
-      <div class="hint">非官方域名（GitHub Pages / 安卓安装包）下，AI 通过你自己的 Cloudflare Worker 调用 DeepSeek，Key 仅存于服务端、不会进入安装包。部署方法见项目 README 的「AI 代理」一节。</div>
+      <div class="hint">非官方域名（GitHub Pages / 安卓安装包）下，AI 通过你自己的 国内代理（阿里云函数计算 / 腾讯云 Web 函数 / 国内 VPS）调用 DeepSeek，Key 仅存于服务端、不会进入安装包。部署方法见项目 README 的「AI 代理」一节。</div>
       <div class="hint" id="aiProxyMode">${modeTxt}</div>
       <div class="btn-row"><button class="gbtn" id="aiProxySave">保存</button><button class="gbtn" id="aiProxyTest">测试连接</button></div>`;
     document.getElementById('aiProxyUrl').onchange = () => { s.aiProxyUrl = document.getElementById('aiProxyUrl').value.trim(); save(); renderAiProxyCard(); };
