@@ -3292,11 +3292,47 @@
     if (['math', 'major', 'english'].includes(curPage)) renderPage(curPage);
   }
   function exportData() {
-    const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+    const json = JSON.stringify(store, null, 2);
+    const filename = 'kaoyan28_backup_' + todayStr() + '.json';
+    // 安卓 WebView（APK 安装包）里 a.click() 的 blob 下载不会触发系统下载管理器，
+    // 必须用系统分享把真实 .json 文件交给“保存到文件 / 网盘 / 微信”等。
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if (isNative) {
+      const file = new File([new Blob([json], { type: 'application/json' })], filename, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: '喵上岸备份', text: '考研备考数据备份' })
+          .then(() => toast('已调起系统分享，选“保存到文件 / 网盘”即可拿到 JSON'))
+          .catch((e) => { if (!(e && e.name === 'AbortError')) nativeFallbackText(json); });
+        return;
+      }
+      if (navigator.share) {
+        navigator.share({ title: '喵上岸备份', text: json })
+          .then(() => toast('已分享备份文本'))
+          .catch(() => nativeFallbackText(json));
+        return;
+      }
+      nativeFallbackText(json);
+      return;
+    }
+    // 浏览器（GitHub Pages / 桌面）：直接下载
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'kaoyan28_backup_' + todayStr() + '.json';
-    a.click(); toast('备份已导出');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast('备份已导出（浏览器会下载 JSON 文件）');
+  }
+  function nativeFallbackText(json) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(() => toast('备份内容已复制到剪贴板')).catch(() => { });
+    }
+    const ta = document.createElement('textarea');
+    ta.value = json;
+    ta.style.cssText = 'position:fixed;left:8px;right:8px;top:38%;height:42%;z-index:9999;font-size:12px';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    toast('已弹出备份内容，长按可全选复制保存');
+    setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 20000);
   }
   function importData(e) {
     const f = e.target.files[0]; if (!f) return;
