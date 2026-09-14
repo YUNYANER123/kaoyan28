@@ -3291,32 +3291,33 @@
     renderSetting();
     if (['math', 'major', 'english'].includes(curPage)) renderPage(curPage);
   }
+  // 原生插件必须显式 registerPlugin 才会挂到 Capacitor.Plugins 上：
+  // 未使用打包器的纯 JS 应用不会自动注册插件，直接读 Capacitor.Plugins.Filesystem 是 undefined。
+  function capPlugin(name) {
+    const cap = window.Capacitor;
+    if (!cap) return null;
+    try {
+      if (cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
+      if (cap.isPluginAvailable && !cap.isPluginAvailable(name)) return null;
+      if (cap.registerPlugin) return cap.registerPlugin(name);
+    } catch (e) { }
+    return null;
+  }
   function exportData() {
     const json = JSON.stringify(store, null, 2);
     const filename = 'kaoyan28_backup_' + todayStr() + '.json';
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-    // 安卓安装包：用 Capacitor 原生文件能力写出「真实 .json 文件」再调起系统分享，
-    // 这样无论数据多大都不会被截断（剪贴板对大文本会溢出/截断，不可靠）。
-    if (isNative && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
-      exportNativeFile(json, filename);
-      return;
-    }
     if (isNative) {
-      // 没有 Filesystem 插件时的兜底：尽量用系统分享真实文件
+      const Filesystem = capPlugin('Filesystem');
+      if (Filesystem) { exportNativeFile(json, filename, Filesystem, capPlugin('Share')); return; }
       const file = new File([new Blob([json], { type: 'application/json' })], filename, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         navigator.share({ files: [file], title: '喵上岸备份', text: '考研备考数据备份' })
-          .then(() => toast('已调起系统分享，选“保存到文件 / 网盘”即可拿到 JSON'))
-          .catch((e) => { if (!(e && e.name === 'AbortError')) nativeFallbackText(json); });
+          .then(() => toast('已调起系统分享'))
+          .catch((e) => { if (!(e && e.name === 'AbortError')) nativeFallbackText(json, e); });
         return;
       }
-      if (navigator.share) {
-        navigator.share({ title: '喵上岸备份', text: json })
-          .then(() => toast('已分享备份文本'))
-          .catch(() => nativeFallbackText(json));
-        return;
-      }
-      nativeFallbackText(json);
+      nativeFallbackText(json, { message: '原生文件插件不可用' });
       return;
     }
     // 浏览器（GitHub Pages / 桌面）：直接下载
@@ -3328,26 +3329,35 @@
     setTimeout(() => URL.revokeObjectURL(url), 1500);
     toast('备份已导出（浏览器会下载 JSON 文件）');
   }
-  async function exportNativeFile(json, filename) {
-    const { Filesystem, Share } = window.Capacitor.Plugins;
+  async function exportNativeFile(json, filename, Filesystem, Share) {
+    const w = (dir) => Filesystem.writeFile({ path: filename, data: json, directory: dir, encoding: 'utf8' });
+    let uri = '';
+    try { uri = (await w('CACHE')).uri; }
+    catch (e1) {
+      try { uri = (await w('DOCUMENTS')).uri; }
+      catch (e2) { nativeFallbackText(json, e2); return; }
+    }
+    if (Share && uri) {
+      try {
+        await Share.share({ title: '喵上岸备份', text: '考研备考数据备份', dialogTitle: '保存或发送备份文件', files: [uri] });
+        toast('已生成完整 .json 文件，选“保存到文件 / 网盘 / 微信”即可');
+        return;
+      } catch (e3) { }
+    }
     try {
-      const res = await Filesystem.writeFile({ path: filename, data: json, directory: 'Documents', recursive: true });
-      if (Share) {
-        await Share.share({ title: '喵上岸备份', text: '考研备考数据备份', files: [res.uri] });
-        toast('已生成完整 .json 文件并调起系统分享，选“保存到文件 / 网盘 / 微信”即可');
-      } else {
-        toast('备份已保存到应用文档目录：' + filename);
-      }
-    } catch (e) {
-      nativeFallbackText(json);
+      await w('DOCUMENTS');
+      toast('备份已保存到“文档(Documents)”：' + filename + '，导入时选它即可');
+    } catch (e4) {
+      toast('备份文件已生成：' + filename);
     }
   }
-  function nativeFallbackText(json) {
+  function nativeFallbackText(json, err) {
+    const msg = (err && (err.message || err.errorMessage || err.code)) || '';
     const ta = document.createElement('textarea');
     ta.value = json;
     ta.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;height:50%;z-index:9999;font-size:12px';
     document.body.appendChild(ta); ta.focus(); ta.select();
-    toast('当前环境无法生成文件，已弹出备份文本，请长按全选后保存（大数据可能不完整）');
+    toast('导出失败' + (msg ? ('：' + msg) : '') + '，已弹出备份文本可手动复制');
     setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 30000);
   }
   function importData(e) {
