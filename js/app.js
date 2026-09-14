@@ -3294,10 +3294,15 @@
   function exportData() {
     const json = JSON.stringify(store, null, 2);
     const filename = 'kaoyan28_backup_' + todayStr() + '.json';
-    // 安卓 WebView（APK 安装包）里 a.click() 的 blob 下载不会触发系统下载管理器，
-    // 必须用系统分享把真实 .json 文件交给“保存到文件 / 网盘 / 微信”等。
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    // 安卓安装包：用 Capacitor 原生文件能力写出「真实 .json 文件」再调起系统分享，
+    // 这样无论数据多大都不会被截断（剪贴板对大文本会溢出/截断，不可靠）。
+    if (isNative && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+      exportNativeFile(json, filename);
+      return;
+    }
     if (isNative) {
+      // 没有 Filesystem 插件时的兜底：尽量用系统分享真实文件
       const file = new File([new Blob([json], { type: 'application/json' })], filename, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         navigator.share({ files: [file], title: '喵上岸备份', text: '考研备考数据备份' })
@@ -3323,16 +3328,27 @@
     setTimeout(() => URL.revokeObjectURL(url), 1500);
     toast('备份已导出（浏览器会下载 JSON 文件）');
   }
-  function nativeFallbackText(json) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(json).then(() => toast('备份内容已复制到剪贴板')).catch(() => { });
+  async function exportNativeFile(json, filename) {
+    const { Filesystem, Share } = window.Capacitor.Plugins;
+    try {
+      const res = await Filesystem.writeFile({ path: filename, data: json, directory: 'Documents', recursive: true });
+      if (Share) {
+        await Share.share({ title: '喵上岸备份', text: '考研备考数据备份', files: [res.uri] });
+        toast('已生成完整 .json 文件并调起系统分享，选“保存到文件 / 网盘 / 微信”即可');
+      } else {
+        toast('备份已保存到应用文档目录：' + filename);
+      }
+    } catch (e) {
+      nativeFallbackText(json);
     }
+  }
+  function nativeFallbackText(json) {
     const ta = document.createElement('textarea');
     ta.value = json;
-    ta.style.cssText = 'position:fixed;left:8px;right:8px;top:38%;height:42%;z-index:9999;font-size:12px';
+    ta.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;height:50%;z-index:9999;font-size:12px';
     document.body.appendChild(ta); ta.focus(); ta.select();
-    toast('已弹出备份内容，长按可全选复制保存');
-    setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 20000);
+    toast('当前环境无法生成文件，已弹出备份文本，请长按全选后保存（大数据可能不完整）');
+    setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 30000);
   }
   function importData(e) {
     const f = e.target.files[0]; if (!f) return;
