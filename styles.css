@@ -696,8 +696,6 @@ textarea{width:100%;border-radius:13px;background:rgba(46,144,232,.06);padding:1
 .sentence-pop{position:fixed;z-index:9999;max-width:78vw;background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px 11px 30px;box-shadow:0 10px 30px rgba(20,40,80,.25);font-size:12.5px;line-height:1.7}
 .sentence-pop .sp-en{font-weight:800;color:var(--ink);margin-bottom:5px}
 .sentence-pop .sp-zh{color:var(--ink2)}
-.sentence-pop .sp-x{position:absolute;top:5px;left:6px;width:20px;height:20px;border:none;background:rgba(120,140,170,.14);color:#5A6B82;border-radius:50%;font-size:12px;line-height:20px;cursor:pointer;padding:0}
-.sentence-pop .sp-x:active{background:rgba(120,140,170,.3)}
 .sentence-pop.hidden{display:none}
 
 /* ===== 生活日历（经期/大便）===== */
@@ -853,8 +851,6 @@ textarea{width:100%;border-radius:13px;background:rgba(46,144,232,.06);padding:1
 .math-tab{flex:1;border:1px solid var(--line);background:rgba(255,255,255,.6);color:var(--ink2);border-radius:12px;padding:9px 0;font-size:13.5px;font-weight:800;cursor:pointer;transition:.15s}
 .math-tab.active{background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(67,201,160,.3)}
 .math-tab:active{transform:scale(.97)}
-.sp-close-top{position:sticky;top:0;display:block;width:fit-content;margin:0 0 8px auto;z-index:6;background:rgba(46,144,232,.1);color:#2E90E8;border:1px solid rgba(46,144,232,.25);border-radius:20px;font-size:12px;font-weight:800;padding:5px 12px;cursor:pointer}
-.sp-close-top:active{transform:scale(.96)}
 /* ===== 数学分板块子标签 + 填空题 ===== */
 .mtabs{display:flex;gap:6px;background:rgba(255,255,255,.55);padding:4px;border-radius:13px;margin-bottom:12px;box-shadow:var(--shadow2);overflow-x:auto}
 .mtab{flex:1;min-width:62px;height:33px;border:none;background:transparent;border-radius:11px;font-size:12.5px;font-weight:800;color:var(--ink2);white-space:nowrap;cursor:pointer;transition:all .2s}
