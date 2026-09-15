@@ -1401,7 +1401,7 @@
       pop.id = 'sentencePop'; pop.className = 'sentence-pop hidden';
       document.body.appendChild(pop);
     }
-    pop.innerHTML = `<button class="sp-x" title="关闭译文">✕</button><div class="sp-en">${esc(en)}</div><div class="sp-zh">${esc(zh)}</div>`;
+    pop.innerHTML = `<div class="sp-en">${esc(en)}</div><div class="sp-zh">${esc(zh)}</div>`;
     pop.classList.remove('hidden');
     const r = el.getBoundingClientRect();
     pop.style.visibility = 'hidden';
@@ -1413,8 +1413,6 @@
     if (top < 8) top = 8;
     pop.style.top = top + 'px'; pop.style.left = left + 'px';
     pop.style.visibility = 'visible';
-    const xb = pop.querySelector('.sp-x');
-    if (xb) xb.onclick = (e) => { e.stopPropagation(); pop.classList.add('hidden'); };
   }
   function renderEnRead() {
     const host = $('#enRead');
@@ -1463,7 +1461,6 @@
           </div>`).join('');
         const passageHTML = sentences.map((ss, si) => `<span class="rs" data-si="${si}">${esc(ss)} </span>`).join('');
         openModal('📖 ' + r.title, `
-          <button class="sp-close-top" id="spCloseTop" title="关闭译文">✕ 关闭译文</button>
           <div class="mb-src">题源：${esc(r.src)}</div>
           <div class="mb-sec">原文（点击任意句子看译文）</div>
           <div class="mb-pass rs-pass">${passageHTML}</div>
@@ -1472,8 +1469,6 @@
         `);
         const mask = document.getElementById('modalMask');
         if (mask) {
-          const spc = mask.querySelector('#spCloseTop');
-          if (spc) spc.onclick = () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); };
           mask.querySelectorAll('.rs').forEach((sp) => {
             sp.onclick = () => { const si = +sp.dataset.si; showSentencePopup(sp, sentences[si], transArr[si] || '（暂无译文）'); };
           });
@@ -1646,6 +1641,24 @@
       items: (o) => o.items,
         norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, tp: '概率', q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
     },
+    mathGDFill: {
+      label: '高数填空题', n: 4,
+      prompt: (s) => '生成 4 道考研数学' + (s.math==='2'?'二':'一') + '高等数学填空题（给题目，答案为一个数值或表达式）。严格输出 JSON：{"items":[{"q":"题目（含空白或问号）","a":"标准答案","s":"解析","src":"考点出处"}]}。',
+      items: (o) => o.items,
+      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
+    },
+    mathXDFill: {
+      label: '线代填空题', n: 4,
+      prompt: () => '生成 4 道考研数学线性代数填空题（行列式、矩阵、向量组、特征值）。严格输出 JSON：{"items":[{"q":"题目","a":"标准答案","s":"解析","src":"考点出处"}]}。',
+      items: (o) => o.items,
+      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
+    },
+    mathGLFill: {
+      label: '概率填空题', n: 4,
+      prompt: () => '生成 4 道考研数学概率论与数理统计填空题（期望、方差、概率计算）。严格输出 JSON：{"items":[{"q":"题目","a":"标准答案","s":"解析","src":"考点出处"}]}。',
+      items: (o) => o.items,
+      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
+    },
     mathGDJudge: {
       label: '高数判断题', n: 3,
       prompt: (s) => '生成 3 道考研数学' + (s.math === '2' ? '二' : '一') + '高等数学判断题（给一个命题，判断对/错）。严格输出 JSON：{"items":[{"q":"命题陈述","a":true或false,"s":"解析（为何对/错）","src":"考点出处"}]}。命题要贴近真题常考结论，干扰项要有迷惑性。',
@@ -1770,7 +1783,7 @@
     const left = freshLeft(key, pool);
     const avail = cloudAvailable();
     const tip = !avail.ok
-      ? '⚠️ ' + avail.msg + '（' + OFFICIAL_HOST + '）'
+      ? '⚠️ ' + avail.msg
       : (aiMsg[key] || ('内容不够？点一下让 AI 现场生成 ' + sp.n + ' 条，永久并入你的题库'));
     return `<div class="ai-box ai-gen">
       <div class="ai-gen-t">题库共 <b>${total}</b> 条 · 本轮还有 <b>${left}</b> 条没出现过</div>
@@ -1899,62 +1912,94 @@
 
   /* ================= 4. 数学 ================= */
   function renderMath() {
-    tabSwitch('math', { q: renderMathQ, f: renderMathFormulas, r: renderMathWrong });
+    tabSwitch('math', { q: renderMathQ, f: renderMathFormulas });
   }
   /* ============ 数学分板块（高数 / 线代 / 概率论）今日题目 ============ */
   const MATH_SEC_CODE = { '高数': 'GD', '线代': 'XD', '概率': 'GL' };
-  const MATH_KEY_BANK = {
-    mathGD: 'choice', mathGDJudge: 'judge', mathGDSol: 'sol',
-    mathXD: 'choice', mathXDJudge: 'judge', mathXDSol: 'sol',
-    mathGL: 'choice', mathGLJudge: 'judge', mathGLSol: 'sol'
+  // 每个板块的三类题型：选择题（四选一，可点选自判）、填空题（可输入自填）、解答题（点击显示答案）
+  const MATH_TYPE_LABEL = { choice: '选择题', fill: '填空题', sol: '解答题' };
+  const KEYS = {
+    '高数': { choice: 'mathGD',  fill: 'mathGDFill',  sol: 'mathGDSol' },
+    '线代': { choice: 'mathXD',  fill: 'mathXDFill',  sol: 'mathXDSol' },
+    '概率': { choice: 'mathGL',  fill: 'mathGLFill',  sol: 'mathGLSol' }
   };
   const MATH_SEC_KEYS = {
-    '高数': [['mathGD', '选择题'], ['mathGDJudge', '判断题'], ['mathGDSol', '解答题']],
-    '线代': [['mathXD', '选择题'], ['mathXDJudge', '判断题'], ['mathXDSol', '解答题']],
-    '概率': [['mathGL', '选择题'], ['mathGLJudge', '判断题'], ['mathGLSol', '解答题']]
+    '高数': [['mathGD', '选择题'], ['mathGDFill', '填空题'], ['mathGDSol', '解答题']],
+    '线代': [['mathXD', '选择题'], ['mathXDFill', '填空题'], ['mathXDSol', '解答题']],
+    '概率': [['mathGL', '选择题'], ['mathGLFill', '填空题'], ['mathGLSol', '解答题']]
   };
-  // 按每日题量 N 计算题型分布：N<=3 时轮转（N=3→选择/判断/解答各 1；N=1→当天一种题型，逐日轮换）；N>3 时均分
-  function sectionTypes(N, dayIdx) {
-    const types = ['choice', 'judge', 'sol'];
-    const out = [];
-    if (N <= 3) { for (let i = 0; i < N; i++) out.push(types[(dayIdx + i) % 3]); return out; }
-    const base = Math.floor(N / 3), rem = N % 3, cnt = [base, base, base];
-    for (let i = 0; i < rem; i++) cnt[i]++;
-    types.forEach((t, i) => { for (let j = 0; j < cnt[i]; j++) out.push(t); });
-    return out;
+  // 判断一道题是否为「四选一选择题」：题干含 (A)(B)(C)(D) 选项且答案含「选 X」
+  function isMathMC(q, a) {
+    return /[\(（]\s*[A-Da-d]\s*[\)）]/.test(q || '') && /选\s*[A-Da-d]/i.test(a || '');
   }
-  // 取某板块当天的题目（选择题=内置真题；判断题/解答题=内置为空时由 AI 扩充填充）
-  function mathSectionQuestions(sec, banks, count, seed) {
-    const types = ['choice', 'judge', 'sol'];
-    const avail = types.filter((k) => (banks[k] || []).length > 0);
-    if (!avail.length || count <= 0) return [];
-    const want = sectionTypes(count, hashStr(seed) % 3);
-    const out = [];
-    for (let i = 0; i < count; i++) {
-      let tk = want[i];
-      if (!(banks[tk] || []).length) tk = avail[i % avail.length];   // 该题型暂无题，用有题的题型补位
-      const arr = banks[tk];
-      const picked = pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, 1, seed + tk + i)[0];
-      if (picked) out.push({ type: tk, q: picked });
+  function mathCorrectLetter(a) {
+    const m = /选\s*([A-Da-d])/i.exec(a || '');
+    return m ? m[1].toUpperCase() : '';
+  }
+  // 按板块归集「选择 / 填空 / 解答」三类题库（原题库中「求…=？」计算题归为填空）
+  function mathBanksFor(sec) {
+    const pick = (arr) => (typeof arr !== 'undefined' && arr) ? arr : [];
+    let choice, fill, sol;
+    if (sec === '高数') {
+      choice = pick(MATH_GD).filter((x) => isMathMC(x.q, x.a)).concat(pick(MATH_GD_MC_EXTRA));
+      fill = pick(MATH_GD).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_GD_FILL));
+      sol = pick(MATH_GD_SOL);
+    } else if (sec === '线代') {
+      choice = pick(MATH_XD).filter((x) => isMathMC(x.q, x.a));
+      fill = pick(MATH_XD).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_XD_FILL));
+      sol = pick(MATH_XD_SOL);
+    } else {
+      choice = pick(MATH_GL).filter((x) => isMathMC(x.q, x.a));
+      fill = pick(MATH_GL).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_GL_FILL));
+      sol = pick(MATH_GL_SOL);
     }
+    const k = KEYS[sec];
+    return {
+      choice: withAI(k.choice, choice),
+      fill: withAI(k.fill, fill),
+      sol: withAI(k.sol, sol)
+    };
+  }
+  // 每个板块每日固定 1 选择 + 1 填空 + 1 解答
+  function mathSectionDaily(sec, banks, seed) {
+    const out = [];
+    ['choice', 'fill', 'sol'].forEach((tk) => {
+      const arr = banks[tk] || [];
+      if (!arr.length) return;
+      const picked = pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, 1, seed + tk)[0];
+      if (picked) out.push({ type: tk, q: picked });
+    });
     return out;
   }
   function mathQuestionHTML(sec, item, idx) {
     const { type, q } = item;
-    const label = type === 'choice' ? '选择题' : type === 'judge' ? '判断题' : '解答题';
-    const cls = type === 'choice' ? 'g' : type === 'judge' ? 'o' : 'p';
+    const label = type === 'choice' ? '选择题' : type === 'fill' ? '填空题' : '解答题';
+    const cls = type === 'choice' ? 'g' : type === 'fill' ? 'o' : 'p';
     const head = `<div class="it-h"><span class="badge ${cls}">${label}</span><span class="it-t">第 ${idx + 1} 题</span></div>`;
     const body = `<div class="it-body">${esc(q.q)}</div>`;
-    const src = `<div class="it-src">题源：${esc(q.src)}</div>`;
-    let box;
-    if (type === 'judge') {
-      box = `<div class="sb-btns" style="margin-top:8px"><button data-j="1" style="background:rgba(67,201,160,.16);color:#1f9e7a">✓ 我认为对</button><button data-j="0" style="background:rgba(255,123,146,.16);color:#E5476A">✗ 我认为错</button></div>
-        <div class="ans-box hidden" data-ans><div class="ans-l">正确答案</div><div class="ans-v">${q.a ? '对 ✓' : '错 ✗'}</div><div class="ans-l">解析</div><div class="ans-s">${esc(q.s)}</div>
-        <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div></div>`;
+    const src = `<div class="it-src">题源：${esc(q.src || '')}</div>`;
+    let box = '';
+    if (type === 'choice') {
+      const opts = ['A', 'B', 'C', 'D'].map((L) => `<div class="mb-opt math-opt" data-opt="${L}">${L}</div>`).join('');
+      box = `<div class="mb-opts">${opts}</div>
+        <div class="ans-box hidden" data-ans>
+          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
+          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div>
+        </div>`;
+    } else if (type === 'fill') {
+      box = `<div class="fill-wrap"><input class="fill-input" type="text" placeholder="在这里填写你的答案…" /><button class="ans-btn" data-a="submit">提交</button></div>
+        <div class="ans-box hidden" data-ans>
+          <div class="ans-l">参考答案</div><div class="ans-v">${esc(q.a || '')}</div>
+          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
+          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div>
+        </div>`;
     } else {
       box = `<button class="ans-btn" data-a="show">显示答案与解析</button>
-        <div class="ans-box hidden" data-ans><div class="ans-l">答案</div><div class="ans-v">${esc(q.a)}</div><div class="ans-l">解析</div><div class="ans-s">${esc(q.s)}</div>
-        <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div></div>`;
+        <div class="ans-box hidden" data-ans>
+          <div class="ans-l">答案</div><div class="ans-v">${esc(q.a || '')}</div>
+          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
+          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button></div>
+        </div>`;
     }
     return `<div class="item" data-mi="${idx}" data-sec="${esc(sec)}" data-type="${type}">${head}${body}${src}${box}</div>`;
   }
@@ -1966,7 +2011,7 @@
   function openMathWrong(sec) {
     const list = store.mathWrongSec[sec] || [];
     const body = list.length ? list.map((q, i) => {
-      const label = q.type === 'judge' ? '判断题' : q.type === 'sol' ? '解答题' : '选择题';
+      const label = q.type === 'fill' ? '填空题' : q.type === 'sol' ? '解答题' : '选择题';
       const ans = q.type === 'judge' ? (q.a ? '对 ✓' : '错 ✗') : esc(q.a);
       return `<div class="item"><div class="it-h"><span class="badge r">${label}</span></div><div class="it-body">${esc(q.q)}</div><div class="it-src">题源：${esc(q.src)}</div><div class="it-key">答案：${ans}<br>${esc(q.s)}</div><button class="ans-btn" data-del="${sec}@${i}" style="background:rgba(255,123,146,.12);color:#E5476A;margin-top:8px">移除该题</button></div>`;
     }).join('') : `<div class="empty"><div class="e-cat">🌟</div>「${sec}」还没有错题，继续保持！</div>`;
@@ -1977,48 +2022,67 @@
       store.mathWrongSec[sc].splice(+ix, 1); save(); openMathWrong(sc);
     });
   }
+  let mathSecActive = null;
   function renderMathQ() {
-    const host = $('#mathQ');
-    const t = todayStr();
-    const s = subj();
-    const isM2 = s.math === '2';
+    const host = $('#mathQ'); if (!host) return;
+    const isM2 = subj().math === '2';
     const sections = isM2 ? ['高数', '线代'] : ['高数', '线代', '概率'];
-    const SEC = {
-      '高数': { choice: withAI('mathGD', (typeof MATH_GD !== 'undefined') ? MATH_GD : []), judge: withAI('mathGDJudge', (typeof MATH_GD_JUDGE !== 'undefined') ? MATH_GD_JUDGE : []), sol: withAI('mathGDSol', (typeof MATH_GD_SOL !== 'undefined') ? MATH_GD_SOL : []) },
-      '线代': { choice: withAI('mathXD', (typeof MATH_XD !== 'undefined') ? MATH_XD : []), judge: withAI('mathXDJudge', (typeof MATH_XD_JUDGE !== 'undefined') ? MATH_XD_JUDGE : []), sol: withAI('mathXDSol', (typeof MATH_XD_SOL !== 'undefined') ? MATH_XD_SOL : []) },
-      '概率': { choice: withAI('mathGL', (typeof MATH_GL !== 'undefined') ? MATH_GL : []), judge: withAI('mathGLJudge', (typeof MATH_GL_JUDGE !== 'undefined') ? MATH_GL_JUDGE : []), sol: withAI('mathGLSol', (typeof MATH_GL_SOL !== 'undefined') ? MATH_GL_SOL : []) }
-    };
-    const seedBase = 'math' + t + store.mode;
-    let gi = 0; const flat = [];
-    const secBlocks = sections.map((sec) => {
-      const n = store.modeCounts[{ '高数': 'mathGD', '线代': 'mathXD', '概率': 'mathGL' }[sec]][store.mode];
-      const qlist = mathSectionQuestions(sec, SEC[sec], n, seedBase + sec);
-      qlist.forEach((item) => flat.push({ sec, item }));
-      const itemsHTML = qlist.length ? qlist.map((item) => mathQuestionHTML(sec, item, gi++)).join('')
-        : `<div class="empty sm">「${sec}」题库暂无可刷题（点下方按钮让 AI 生成真题并并入题库）。</div>`;
-      const wrongN = (store.mathWrongSec[sec] || []).length;
-      const aiList = MATH_SEC_KEYS[sec].map(([k, lbl]) => ({ key: k, label: sec + lbl, total: (SEC[sec][MATH_KEY_BANK[k]] || []).length }));
-      return `<div class="math-sec">
-        <div class="math-sec-h"><span class="ms-t">📐 ${sec}</span><span class="ms-c">今日 ${qlist.length} 题</span><button class="ms-wrong" data-mwrong="${esc(sec)}">❌ 错题本（${wrongN}）</button></div>
-        <div class="math-sec-body">${itemsHTML}</div>
-        ${aiBoxMulti(aiList)}
-      </div>`;
-    });
-    const per = store.modeCounts.mathGD[store.mode];
-    const hint = `数学分板块刷题（${isM2 ? '数学二：高数 + 线代' : '高数 + 线代 + 概率论'}）· 每板块默认每天 ${per} 题（1 选择 + 1 判断 + 1 解答，可在「设置 → 每日题量」改）· 题源已标注`;
-    host.innerHTML = `<div class="hint">${hint}</div>` + secBlocks.join('');
-    $$('#mathQ .ms-wrong').forEach((b) => b.onclick = () => openMathWrong(b.dataset.mwrong));
+    if (!mathSecActive || sections.indexOf(mathSecActive) < 0) mathSecActive = sections[0];
+    const tabs = sections.map((sec) => `<button class="mtab ${sec === mathSecActive ? 'on' : ''}" data-ms="${esc(sec)}">${sec}</button>`).join('');
+    host.innerHTML = `<div class="mtabs">${tabs}</div><div id="mathSecBody"></div>`;
+    host.querySelectorAll('.mtab').forEach((b) => { b.onclick = () => { mathSecActive = b.dataset.ms; renderMathQ(); }; });
+    renderMathSection(mathSecActive);
+  }
+  function renderMathSection(sec) {
+    const body = document.getElementById('mathSecBody'); if (!body) return;
+    const banks = mathBanksFor(sec);
+    const seed = 'math' + sec + todayStr() + store.mode;
+    const qlist = mathSectionDaily(sec, banks, seed);
+    const wrongN = (store.mathWrongSec[sec] || []).length;
+    const itemsHTML = qlist.length ? qlist.map((item, i) => mathQuestionHTML(sec, item, i)).join('')
+      : `<div class="empty sm">「${sec}」今日题库暂无可刷题（点下方按钮让 AI 生成并并入题库）。</div>`;
+    const ks = KEYS[sec];
+    const aiList = [
+      { key: ks.choice, label: sec + '选择题', total: (banks.choice || []).length },
+      { key: ks.fill,   label: sec + '填空题', total: (banks.fill || []).length },
+      { key: ks.sol,    label: sec + '解答题', total: (banks.sol || []).length }
+    ];
+    body.innerHTML = `
+      <div class="math-sec-h"><span class="ms-t">📐 ${sec} · 今日 ${qlist.length} 题</span><button class="ms-wrong" data-mwrong="${esc(sec)}">❌ 错题本（${wrongN}）</button></div>
+      <div class="math-sec-body">${itemsHTML}</div>
+      ${aiBoxMulti(aiList)}`;
+    const wb = body.querySelector('[data-mwrong]'); if (wb) wb.onclick = () => openMathWrong(sec);
+    wireMathSection(body, sec, qlist);
     wireAiGen();
-    $$('#mathQ .item[data-mi]').forEach((el) => {
-      const i = +el.dataset.mi; const entry = flat[i]; if (!entry) return;
-      const { sec, item } = entry;
-      const showBtn = el.querySelector('[data-a="show"]');
-      if (showBtn) showBtn.onclick = () => { el.querySelector('[data-ans]').classList.remove('hidden'); showBtn.classList.add('hidden'); };
+    ['choice', 'fill', 'sol'].forEach((tk) => { const arr = banks[tk] || []; if (arr.length) aiMaybeAuto(KEYS[sec][tk], arr, 1); });
+  }
+  function wireMathSection(body, sec, qlist) {
+    body.querySelectorAll('.item[data-mi]').forEach((el) => {
+      const i = +el.dataset.mi; const item = qlist[i]; if (!item) return;
+      const { type, q } = item;
+      const ansBox = el.querySelector('[data-ans]');
+      if (type === 'choice') {
+        const correct = mathCorrectLetter(q.a);
+        el.querySelectorAll('.math-opt').forEach((ob) => {
+          ob.onclick = () => {
+            const L = ob.dataset.opt;
+            el.querySelectorAll('.math-opt').forEach((e) => e.classList.remove('corr', 'wrong'));
+            if (L === correct) ob.classList.add('corr');
+            else { ob.classList.add('wrong'); const c = el.querySelector('.math-opt[data-opt="' + correct + '"]'); if (c) c.classList.add('corr'); }
+            if (ansBox) ansBox.classList.remove('hidden');
+          };
+        });
+      } else if (type === 'fill') {
+        const submitBtn = el.querySelector('[data-a="submit"]');
+        if (submitBtn) submitBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); };
+      } else {
+        const showBtn = el.querySelector('[data-a="show"]');
+        if (showBtn) showBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); showBtn.classList.add('hidden'); };
+      }
       const okBtn = el.querySelector('[data-a="ok"]');
       if (okBtn) okBtn.onclick = () => { bumpMath(); toast('棒！已记录'); };
       const wrongBtn = el.querySelector('[data-a="wrong"]');
       if (wrongBtn) wrongBtn.onclick = () => { addMathWrong(sec, item); toast('已加入' + sec + '错题本'); };
-      el.querySelectorAll('[data-j]').forEach((jb) => jb.onclick = () => { el.querySelector('[data-ans]').classList.remove('hidden'); jb.classList.add('on'); });
     });
   }
   function bumpMath(q) {
@@ -2055,7 +2119,7 @@
     host.innerHTML = sections.map((sec) => {
       const list = store.mathWrongSec[sec] || [];
       const items = list.length ? list.map((q, i) => {
-        const label = q.type === 'judge' ? '判断题' : q.type === 'sol' ? '解答题' : '选择题';
+        const label = q.type === 'fill' ? '填空题' : q.type === 'sol' ? '解答题' : '选择题';
         const ans = q.type === 'judge' ? (q.a ? '对 ✓' : '错 ✗') : esc(q.a);
         return `<div class="item"><div class="it-h"><span class="badge r">${label}</span></div><div class="it-body">${esc(q.q)}</div><div class="it-src">题源：${esc(q.src)}</div><div class="it-key">答案：${ans}<br>${esc(q.s)}</div><button class="ans-btn" data-del="${sec}@${i}" style="background:rgba(255,123,146,.12);color:#E5476A;margin-top:8px">移除该题</button></div>`;
       }).join('') : `<div class="empty sm">「${sec}」暂无错题</div>`;
