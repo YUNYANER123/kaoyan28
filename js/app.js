@@ -1339,7 +1339,7 @@
     let html = `<div class="explain-card">
       <div class="ec-h">讲解 · 第 ${round} 轮</div>
       <div class="ec-w">${esc(w.w)} ${w.p ? `<span class="ec-p">${esc(w.p)}</span>` : ''}</div>
-      <div class="ec-sec">翻译（各种词性）</div>
+      <div class="ec-sec">翻译</div>
       <div class="ec-m">${esc(w.m)}</div>`;
     if (ex.e) {
       html += `<div class="ec-sec">例句</div><div class="ec-e">${esc(ex.e)}</div>`;
@@ -2139,7 +2139,7 @@
       if (!/^https?:\/\//.test(url)) return { ok: false, msg: '请先在「设置 → AI 代理」填写 Worker 代理地址' };
       return { ok: true, msg: '' };
     }
-    return { ok: false, msg: 'AI 生成未配置：在官方地址 miaoshangan-kaoyan.app.workbuddy.host 使用免费 AI，或在「设置 → AI 代理」填写自建 Worker 地址' };
+    return { ok: false, msg: 'AI 生成未配置：请在「设置 → AI 代理」填写自建 Worker 地址（或部署你自己的 AI 代理）后即可使用。' };
   }
 
   // 云端共享题库：别人生成过的书，你直接用，不用再消耗一次生成。
@@ -3375,7 +3375,7 @@
   function renderAiProxyCard() {
     const s = store.settings;
     const mode = aiProviderMode();
-    const modeTxt = mode === 'workbuddy' ? '当前：官方免费 AI（miaoshangan-kaoyan.app.workbuddy.host）'
+    const modeTxt = mode === 'workbuddy' ? '当前：官方免费 AI'
       : mode === 'custom' ? '当前：自建代理（' + esc(s.aiModel || 'deepseek-chat') + '）'
       : '当前：未配置，AI 不可用';
     const box = document.getElementById('aiProxyCard');
