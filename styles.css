@@ -849,6 +849,12 @@ textarea{width:100%;border-radius:13px;background:rgba(46,144,232,.06);padding:1
 .math-sec-h .ms-wrong{margin-left:auto;border:1px solid rgba(229,71,106,.35);background:rgba(255,123,146,.12);color:#E5476A;border-radius:20px;font-size:11px;font-weight:800;padding:4px 10px;cursor:pointer}
 .math-sec-h .ms-wrong:active{background:rgba(255,123,146,.24)}
 .math-sec-body .empty.sm{font-size:12px;padding:14px 8px}
+.math-tabs{display:flex;gap:8px;margin:2px 0 12px}
+.math-tab{flex:1;border:1px solid var(--line);background:rgba(255,255,255,.6);color:var(--ink2);border-radius:12px;padding:9px 0;font-size:13.5px;font-weight:800;cursor:pointer;transition:.15s}
+.math-tab.active{background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(67,201,160,.3)}
+.math-tab:active{transform:scale(.97)}
+.sp-close-top{position:sticky;top:0;display:block;width:fit-content;margin:0 0 8px auto;z-index:6;background:rgba(46,144,232,.1);color:#2E90E8;border:1px solid rgba(46,144,232,.25);border-radius:20px;font-size:12px;font-weight:800;padding:5px 12px;cursor:pointer}
+.sp-close-top:active{transform:scale(.96)}
 /* ===== 专业课收藏按钮条 ===== */
 .maj-fav-bar{margin-bottom:8px}
 .maj-fav-bar .mview{margin:0}

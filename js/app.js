@@ -118,9 +118,9 @@
         enTrans: { easy: 3, hard: 3 },
         enTranslateExam: { easy: 3, hard: 3 },
         enZhenti: { easy: 1, hard: 3 },
-        mathGD: { easy: 3, hard: 3 },
-        mathXD: { easy: 3, hard: 3 },
-        mathGL: { easy: 3, hard: 3 },
+        mathGD: { easy: 3, hard: 6 },
+        mathXD: { easy: 3, hard: 6 },
+        mathGL: { easy: 3, hard: 6 },
         mathF: { easy: 2, hard: 5 },
         majPoints: { easy: 3, hard: 3 },
         majChoice: { easy: 0, hard: 10 },
@@ -1056,6 +1056,8 @@
         const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden');
         mask.classList.add('hidden');
       };
+      // 阅读页滑动时关闭句子译文弹窗（满足「滑页即收起译文」）
+      mask.querySelector('.modal-body').addEventListener('scroll', () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); });
     }
     mask.querySelector('.modal-title').textContent = title;
     mask.querySelector('.modal-body').innerHTML = bodyHTML;
@@ -1461,6 +1463,7 @@
           </div>`).join('');
         const passageHTML = sentences.map((ss, si) => `<span class="rs" data-si="${si}">${esc(ss)} </span>`).join('');
         openModal('📖 ' + r.title, `
+          <button class="sp-close-top" id="spCloseTop" title="关闭译文">✕ 关闭译文</button>
           <div class="mb-src">题源：${esc(r.src)}</div>
           <div class="mb-sec">原文（点击任意句子看译文）</div>
           <div class="mb-pass rs-pass">${passageHTML}</div>
@@ -1469,6 +1472,8 @@
         `);
         const mask = document.getElementById('modalMask');
         if (mask) {
+          const spc = mask.querySelector('#spCloseTop');
+          if (spc) spc.onclick = () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); };
           mask.querySelectorAll('.rs').forEach((sp) => {
             sp.onclick = () => { const si = +sp.dataset.si; showSentencePopup(sp, sentences[si], transArr[si] || '（暂无译文）'); };
           });
@@ -2416,7 +2421,7 @@
     const dailyHTML = `<div class="maj-pts">${pick.map((p) => `<div class="item blur" data-pt="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn ${isMajFav('points', p.id) ? 'on' : ''}" data-fav="points" data-id="${esc(p.id)}" title="收藏">${isMajFav('points', p.id) ? '★' : '☆'}</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>`;
     host.innerHTML = majWarnHTML()
       + `<div class="maj-fav-bar"><button class="mview" data-majfav>⭐ 我的收藏知识点（${favPts.length}）</button></div>`
-      + `<div class="hint">专业课知识点 / 公式${isEasy ? '（轻松版·理解为主）' : '（备考版）'} · 今日 ${pick.length} 条（共 ${all.length} 条）· 点 ⭐ 收藏，点条目切换遮盖 / 显示</div>`
+      + `<div class="hint">专业课知识点 / 公式${isEasy ? '（轻松版·理解为主）' : '（备考版）'} · 今日 ${pick.length} 条（共 ${all.length} 条）· 点⭐收藏</div>`
       + dailyHTML + aiBoxHTML('majPoints', all);
     $$('#majP .item[data-pt]').forEach((li) => li.onclick = () => li.classList.toggle('blur'));
     $$('#majP [data-fav]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); majFavToggle(b.dataset.fav, b.dataset.id); renderMajorPoints(isEasy); });
