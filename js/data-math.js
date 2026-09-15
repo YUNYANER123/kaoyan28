@@ -219,3 +219,11 @@ const MATH_FORMULAS = [
     ]
   }
 ];
+
+/* 数学判断题 / 解答题 内置题库：初始为空，靠「AI 扩充」生成练习题，或后续粘贴真题后并入 */
+const MATH_GD_JUDGE = [];
+const MATH_GD_SOL = [];
+const MATH_XD_JUDGE = [];
+const MATH_XD_SOL = [];
+const MATH_GL_JUDGE = [];
+const MATH_GL_SOL = [];
