@@ -159,7 +159,203 @@
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { toast('保存失败：存储空间不足'); }
+    pushWidgetSnapshot();
   }
+
+  /* ============ 原生桌面小组件 数据桥 ============ */
+  // 网页（PWA）里没有原生插件，getBridge() 返回 null，下列调用全部安全跳过。
+  let _bridge = null;
+  function getBridge() {
+    if (_bridge) return _bridge;
+    try {
+      if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+        _bridge = window.Capacitor.registerPlugin('KaoyanBridge');
+      }
+    } catch (e) { _bridge = null; }
+    return _bridge;
+  }
+  function pushWidgetSnapshot() {
+    const br = getBridge();
+    if (!br) return;
+    try { br.pushSnapshot({ value: JSON.stringify(buildWidgetSnapshot()) }); } catch (e) {}
+  }
+  function pullAndApplyWidgetActions() {
+    const br = getBridge();
+    if (!br) return;
+    br.pullActions().then((r) => {
+      const a = JSON.parse((r && r.actions) || '[]');
+      if (Array.isArray(a) && a.length) { applyWidgetActions(a); pushWidgetSnapshot(); }
+    }).catch(() => {});
+  }
+
+  // 无副作用的确定性选择（不碰 store.aiShown，避免影响 App 自身的每日选题）
+  function pickStable(pool, n, seed) {
+    if (!pool || !pool.length) return [];
+    n = Math.min(n, pool.length);
+    const arr = pool.slice();
+    let h = 0; const s = String(seed);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    for (let i = arr.length - 1; i > 0; i--) {
+      h = (h * 1103515245 + 12345) >>> 0;
+      const j = h % (i + 1);
+      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    return arr.slice(0, n);
+  }
+
+  function buildWidgetSnapshot() {
+    const t = todayStr();
+    const hard = store.mode === 'hard';
+    const isM2 = (store.settings && store.settings.math) === '2';
+
+    // 1) 今日计划
+    const plan = [];
+    (store.plan[t] || []).forEach((it) => plan.push({ id: it.id, text: it.text, done: !!it.done }));
+    (store.planTpl || []).forEach((tp) => {
+      if (tp.date && tp.date > t) return;
+      if (tp.dateEnd && tp.dateEnd < t) return;
+      const key = tp.id + '@' + t;
+      plan.push({ id: key, text: tp.text, done: !!(store.planDone && store.planDone[key]) });
+    });
+    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
+
+    // 2) 生活记录
+    const ld = lifeDay(t);
+    const life = {
+      meals: { bf: !!ld.meals.bf, lunch: !!ld.meals.lunch, dinner: !!ld.meals.dinner, exercise: !!ld.meals.exercise },
+      water: ld.water || 0,
+      bowel: !!ld.bowel
+    };
+
+    // 3) 背单词
+    const ws = store.words;
+    const wpool = [];
+    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
+      for (let k = 0; k < 20; k++) {
+        const i = (ws.idx + k) % EN_WORDS.length;
+        const w = EN_WORDS[i];
+        wpool.push({ idx: i, word: w.w, phonetic: w.p || '', meaning: w.m });
+      }
+    }
+    const words = {
+      idx: ws.idx,
+      todayCnt: (day(t).en.wordCount) || 0,
+      totalLearned: (ws.learned || []).length,
+      goal: store.goals.word || 0,
+      pool: wpool
+    };
+
+    // 4) 随机拼写池
+    const spellPool = [];
+    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
+      pickStable(EN_WORDS.map((_, i) => i), Math.min(12, EN_WORDS.length), 'spell' + t).forEach((i) => {
+        const w = EN_WORDS[i];
+        spellPool.push({ meaning: w.m, answer: w.w });
+      });
+    }
+
+    // 5) 数学今日题
+    const math = [];
+    try {
+      const s = subj();
+      const seed = 'math' + t + store.mode;
+      const gd = withAI('mathGD', gdPool());
+      const xd = withAI('mathXD', (typeof MATH_XD !== 'undefined') ? MATH_XD : []);
+      const gl = withAI('mathGL', (typeof MATH_GL !== 'undefined') ? MATH_GL : []);
+      const segs = [['g', gd, store.modeCounts.mathGD[store.mode]]];
+      segs.push(['x', xd, store.modeCounts.mathXD[store.mode]]);
+      if (!isM2) segs.push(['l', gl, store.modeCounts.mathGL[store.mode]]);
+      segs.forEach((seg) => {
+        const tag = seg[0], pool = seg[1], n = seg[2];
+        const np = hard ? n : 1;
+        pickStable(pool, np, seed + tag).forEach((q) => {
+          math.push({ q: q.q, a: q.a, s: q.s, src: q.src, type: tag === 'g' ? '高数' : tag === 'x' ? '线代' : '概率' });
+        });
+      });
+    } catch (e) {}
+
+    // 6) 专业课知识点
+    let majPoints = { count: 0, items: [] };
+    try {
+      const all = majorAllPoints();
+      const per = store.modeCounts.majPoints[store.mode];
+      const items = pickStable(all, per, 'majpts' + t + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
+      majPoints = { count: items.length, items: items };
+    } catch (e) {}
+
+    // 7) 专业课题目
+    let majQuiz = { choiceCount: 0, judgeCount: 0, questions: [] };
+    try {
+      const cAll = majorAllChoice();
+      const jAll = majorAllJudge();
+      const cn = store.modeCounts.majChoice[store.mode];
+      const jn = store.modeCounts.majJudge[store.mode];
+      const cItems = pickStable(cAll, cn, 'majc' + t).map((q) => ({
+        id: q.id, type: 'choice', book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book
+      }));
+      const jItems = pickStable(jAll, jn, 'majj' + t).map((q) => ({
+        id: q.id, type: 'judge', book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book
+      }));
+      majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
+    } catch (e) {}
+
+    return {
+      date: t, mode: store.mode, isM2: isM2,
+      plan: plan, life: life, words: words, spellPool: spellPool,
+      math: math, majorPoints: majPoints, majorQuiz: majQuiz
+    };
+  }
+
+  function applyWidgetActions(actions) {
+    const t = todayStr();
+    actions.forEach((a) => {
+      try {
+        if (a.t === 'planToggle') {
+          if (a.id && a.id.indexOf('@') >= 0) { store.planDone[a.id] = !store.planDone[a.id]; }
+          else { const arr = store.plan[t] || []; const x = arr.find((y) => y.id === a.id); if (x) x.done = !x.done; }
+        } else if (a.t === 'lifeMeal') {
+          lifeDay(t).meals[a.key] = !!a.val;
+        } else if (a.t === 'lifeWater') {
+          lifeDay(t).water = a.val;
+        } else if (a.t === 'lifeBowel') {
+          lifeDay(t).bowel = !!a.val;
+        } else if (a.t === 'wordLearned') {
+          if (a.idx >= 0 && !(store.words.learned || []).includes(a.idx)) {
+            store.words.learned.push(a.idx);
+            const d = day(t); d.en.wordCount = (d.en.wordCount || 0) + 1;
+          }
+        } else if (a.t === 'mathOk') {
+          if (a.q) bumpMath(a.q);
+        } else if (a.t === 'mathWrong') {
+          if (a.q) { bumpMath(a.q); if (!store.mathWrong.find((x) => x.q === a.q.q)) store.mathWrong.push({ q: a.q.q, a: a.q.a, s: a.q.s, src: a.q.src, type: a.q.type }); }
+        } else if (a.t === 'majFavPoint') {
+          majFavToggle('points', a.id);
+        } else if (a.t === 'majFav') {
+          majFavToggle(a.type, a.id);
+        } else if (a.t === 'majWrong') {
+          const q = a.q || {};
+          if (q.type === 'choice') {
+            if (!store.majorWrong.find((x) => x.q === q.q)) store.majorWrong.push({ q: q.q, o: q.options, k: q.answer, s: q.s, src: q.src || q.book });
+          } else {
+            if (!store.majorWrong.find((x) => x.q === q.q)) store.majorWrong.push({ type: 'judge', wid: q.id, q: q.q, o: ['正确', '错误'], k: q.answer, s: q.s, src: q.src || q.book });
+          }
+        }
+      } catch (e) {}
+    });
+    save();
+  }
+
+  // App 回到前台 / 页面可见时，拉取桌面小组件产生的操作并应用到 store
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pullAndApplyWidgetActions();
+    });
+  }
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+    try { window.Capacitor.Plugins.App.addListener('appStateChange', (st) => { if (st && st.isActive) pullAndApplyWidgetActions(); }); } catch (e) {}
+  }
+  // 启动后稍等片刻，确保数据已渲染再推一次快照给小组件
+  if (typeof setTimeout !== 'undefined') setTimeout(() => pushWidgetSnapshot(), 2000);
 
   // 当日学习数据结构
   function day(d) {
