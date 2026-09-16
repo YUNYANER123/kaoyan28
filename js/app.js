@@ -165,27 +165,71 @@
   /* ============ 原生桌面小组件 数据桥 ============ */
   // 网页（PWA）里没有原生插件，getBridge() 返回 null，下列调用全部安全跳过。
   let _bridge = null;
+  let _pushOk = false;      // 至少成功推过一次快照
+  let _pushErr = '';        // 最后一次失败原因（用于自检提示）
+  function bridgeSupported() {
+    try {
+      return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    } catch (e) { return false; }
+  }
   function getBridge() {
     if (_bridge) return _bridge;
+    if (!bridgeSupported()) return null;
     try {
-      if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-        _bridge = window.Capacitor.registerPlugin('KaoyanBridge');
+      const C = window.Capacitor;
+      // 1) 常规方式：动态注册（App 内置插件走这条）
+      if (typeof C.registerPlugin === 'function') _bridge = C.registerPlugin('KaoyanBridge');
+      // 2) 兜底：原生侧已注册的插件会挂在 Capacitor.Plugins 上
+      if ((!_bridge || typeof _bridge.pushSnapshot !== 'function') && C.Plugins && C.Plugins.KaoyanBridge) {
+        _bridge = C.Plugins.KaoyanBridge;
       }
     } catch (e) { _bridge = null; }
     return _bridge;
   }
-  function pushWidgetSnapshot() {
+  function widgetBridgeStatus() {
     const br = getBridge();
-    if (!br) return;
-    try { br.pushSnapshot({ value: JSON.stringify(buildWidgetSnapshot()) }); } catch (e) {}
+    return { supported: bridgeSupported(), ready: !!(br && typeof br.pushSnapshot === 'function'), pushed: _pushOk, error: _pushErr };
+  }
+  function pushWidgetSnapshot() {
+    if (!bridgeSupported()) return;
+    const br = getBridge();
+    if (!br || typeof br.pushSnapshot !== 'function') {
+      _pushErr = 'KaoyanBridge 插件不可用';
+      return;
+    }
+    let payload;
+    try { payload = JSON.stringify(buildWidgetSnapshot()); }
+    catch (e) { _pushErr = '构建快照失败：' + (e && e.message); return; }
+    try {
+      const p = br.pushSnapshot({ value: payload });
+      if (p && typeof p.then === 'function') {
+        p.then(() => { _pushOk = true; }).catch((e) => { _pushErr = (e && e.message) || String(e); });
+      } else { _pushOk = true; }
+    } catch (e) { _pushErr = (e && e.message) || String(e); }
   }
   function pullAndApplyWidgetActions() {
+    if (!bridgeSupported()) return;
     const br = getBridge();
-    if (!br) return;
-    br.pullActions().then((r) => {
-      const a = JSON.parse((r && r.actions) || '[]');
-      if (Array.isArray(a) && a.length) { applyWidgetActions(a); pushWidgetSnapshot(); }
-    }).catch(() => {});
+    if (!br || typeof br.pullActions !== 'function') return;
+    try {
+      br.pullActions().then((r) => {
+        const a = JSON.parse((r && r.actions) || '[]');
+        if (Array.isArray(a) && a.length) { applyWidgetActions(a); pushWidgetSnapshot(); }
+      }).catch(() => { });
+    } catch (e) { }
+  }
+  // Capacitor 桥可能晚于脚本就绪，单次推送容易丢 → 多时机重推。
+  if (typeof setTimeout !== 'undefined') {
+    [300, 1200, 3000, 6000].forEach((ms) => setTimeout(() => pushWidgetSnapshot(), ms));
+    // 8 秒自检：原生平台却一次都没推成功 → 弹一次提示，便于把原因反馈回来。
+    setTimeout(() => {
+      if (!bridgeSupported() || _pushOk) return;
+      try { toast('桌面组件同步失败：' + (_pushErr || '未知原因')); } catch (e) { }
+    }, 8000);
+  }
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('load', () => pushWidgetSnapshot());
+    window.addEventListener('pageshow', () => pushWidgetSnapshot());
   }
 
   // 无副作用的确定性选择（不碰 store.aiShown，避免影响 App 自身的每日选题）
