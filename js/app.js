@@ -3600,6 +3600,7 @@
     $('#exportBtn').onclick = exportData;
     $('#importBtn').onclick = () => $('#importFile').click();
     $('#importFile').onchange = importData;
+    const ipb = $('#importPasteBtn'); if (ipb) ipb.onclick = importPaste;
     $('#resetBtn').onclick = () => { if (confirm('确定清空所有数据？此操作不可恢复！')) { localStorage.removeItem(KEY); store = defaults(); save(); toast('已清空'); buildSidebar(); goPage('home'); } };
 
     // 学科自选 + 每日题量（动态渲染）
@@ -3808,20 +3809,99 @@
       toast('备份文件已生成：' + filename);
     }
   }
+  // 无文件插件 / 导出失败时的兜底：弹出带「复制」按钮的文本框（不自动消失，方便存到微信再回来「粘贴恢复」）
   function nativeFallbackText(json, err) {
     const msg = (err && (err.message || err.errorMessage || err.code)) || '';
+    const old = document.getElementById('__bkBox');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.id = '__bkBox';
+    wrap.style.cssText = 'position:fixed;left:8px;right:8px;top:10%;bottom:10%;z-index:99999;background:#fff;'
+      + 'border:1px solid #C9D6E4;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;'
+      + 'box-shadow:0 8px 30px rgba(0,0,0,.25)';
+    const tip = document.createElement('div');
+    tip.style.cssText = 'font-size:13px;color:#27496B;line-height:1.5';
+    tip.textContent = '备份内容如下：点「复制」把它存到微信/备忘录；装好新版后到「设置 → 粘贴恢复」还原。'
+      + (msg ? ('（提示：' + msg + '）') : '');
     const ta = document.createElement('textarea');
+    ta.id = '__bkTa';
     ta.value = json;
-    ta.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;height:50%;z-index:9999;font-size:12px';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    toast('导出失败' + (msg ? ('：' + msg) : '') + '，已弹出备份文本可手动复制');
-    setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 30000);
+    ta.style.cssText = 'flex:1;width:100%;box-sizing:border-box;font-size:11px;line-height:1.4';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px';
+    const ok = document.createElement('button');
+    ok.className = 'gbtn'; ok.textContent = '复制';
+    const cl = document.createElement('button');
+    cl.className = 'gbtn'; cl.textContent = '关闭';
+    ok.onclick = () => {
+      try {
+        ta.focus(); ta.select();
+        if (document.execCommand('copy')) { toast('已复制到剪贴板'); return; }
+        throw new Error('execCommand failed');
+      } catch (e) {
+        try {
+          navigator.clipboard.writeText(json)
+            .then(() => toast('已复制到剪贴板'))
+            .catch(() => toast('请长按文本框 → 全选 → 复制'));
+        } catch (e2) { toast('请长按文本框 → 全选 → 复制'); }
+      }
+    };
+    cl.onclick = () => wrap.remove();
+    row.appendChild(ok); row.appendChild(cl);
+    wrap.appendChild(tip); wrap.appendChild(ta); wrap.appendChild(row);
+    document.body.appendChild(wrap);
+    toast('导出为文本' + (msg ? ('（' + msg + '）') : '') + '，请点「复制」保存');
   }
   function importData(e) {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => { try { const d = JSON.parse(r.result); store = migrate(d); save(); toast('导入成功，已恢复数据'); buildSidebar(); goPage(curPage); } catch (err) { toast('文件格式错误'); } };
     r.readAsText(f);
+    try { e.target.value = ''; } catch (err) { }
+  }
+
+  // 「粘贴恢复」：把「导出备份」得到的文本直接粘回来即可还原。
+  // 不依赖文件选择器，也不依赖任何原生插件 —— 重装 APK 前后都能用，是最可靠的还原通道。
+  function importPaste() {
+    const old = document.getElementById('__pasteBox');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.id = '__pasteBox';
+    wrap.style.cssText = 'position:fixed;left:8px;right:8px;top:10%;bottom:10%;z-index:99999;background:#fff;'
+      + 'border:1px solid #C9D6E4;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;'
+      + 'box-shadow:0 8px 30px rgba(0,0,0,.25)';
+    const tip = document.createElement('div');
+    tip.style.cssText = 'font-size:13px;color:#27496B;line-height:1.5';
+    tip.textContent = '把之前备份的内容粘贴到下面（长按输入框 → 粘贴），再点「恢复」。当前数据会被覆盖。';
+    const ta = document.createElement('textarea');
+    ta.id = '__pasteTa';
+    ta.placeholder = '在此粘贴备份 JSON…';
+    ta.style.cssText = 'flex:1;width:100%;box-sizing:border-box;font-size:11px;line-height:1.4';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px';
+    const ok = document.createElement('button');
+    ok.className = 'gbtn'; ok.textContent = '恢复';
+    const cl = document.createElement('button');
+    cl.className = 'gbtn'; cl.textContent = '取消';
+    cl.onclick = () => wrap.remove();
+    ok.onclick = () => {
+      let txt = (ta.value || '').trim();
+      if (!txt) { toast('还没有粘贴内容'); return; }
+      // 容忍前后被多带的字符（从聊天窗口复制时常会带上引号或说明文字）
+      const i = txt.indexOf('{'), j = txt.lastIndexOf('}');
+      if (i >= 0 && j > i) txt = txt.slice(i, j + 1);
+      let d;
+      try { d = JSON.parse(txt); } catch (e) { toast('内容格式不正确，请确认粘贴完整'); return; }
+      if (!confirm('确定用这份备份覆盖当前数据？')) return;
+      try {
+        store = migrate(d); save(); wrap.remove();
+        toast('恢复成功'); buildSidebar(); goPage('home');
+      } catch (e) { toast('恢复失败：' + ((e && e.message) || '')); }
+    };
+    row.appendChild(ok); row.appendChild(cl);
+    wrap.appendChild(tip); wrap.appendChild(ta); wrap.appendChild(row);
+    document.body.appendChild(wrap);
+    try { ta.focus(); } catch (e) { }
   }
 
   /* ================= Tab 切换 ================= */
