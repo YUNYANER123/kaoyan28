@@ -3815,3 +3815,145 @@
     });
   }
 })();
+
+  /* ================= 桌面小组件桥接（原生 AppWidget ↔ Web App 数据同步） ================= */
+  function widgetBridgeReady() {
+    return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.KaoyanBridge);
+  }
+  function dailyMathList() {
+    const hard = store.mode === 'hard';
+    const t = todayStr();
+    const s = subj();
+    const seed = 'math' + t + store.mode;
+    const gd = withAI('mathGD', gdPool());
+    const xd = withAI('mathXD', (typeof MATH_XD !== 'undefined') ? MATH_XD : []);
+    const gl = withAI('mathGL', (typeof MATH_GL !== 'undefined') ? MATH_GL : []);
+    const gdP = pickFresh('mathGD', gd, store.modeCounts.mathGD[store.mode], seed + 'g');
+    const xdP = pickFresh('mathXD', xd, store.modeCounts.mathXD[store.mode], seed + 'x');
+    const glP = (s.math !== '2') ? pickFresh('mathGL', gl, store.modeCounts.mathGL[store.mode], seed + 'l') : [];
+    const pick = hard ? gdP.concat(xdP, glP) : [gdP[0], xdP[0], glP[0] ? glP[0] : null].filter(Boolean);
+    return pick.map((q) => ({ q: q.q, a: q.a, s: q.s, src: q.src }));
+  }
+  function dailyWordPool() {
+    const size = Math.max(5, Math.min(40, store.goals.word || 10));
+    const idxs = pickFresh('wWidget', EN_WORDS.map((_, i) => i), size, 'ww' + todayStr() + store.mode);
+    return idxs.map((i) => { const w = EN_WORDS[i]; return { idx: i, word: w.w, phonetic: w.p || '', meaning: w.m || '' }; });
+  }
+  function dailySpellPool() {
+    const idxs = pickFresh('wSpell', EN_WORDS.map((_, i) => i), 20, 'ws' + todayStr() + store.mode);
+    return idxs.map((i) => { const w = EN_WORDS[i]; return { meaning: w.m || '', answer: w.w }; });
+  }
+  function buildSnapshot() {
+    const d = todayStr();
+    const wd = '日一二三四五六'[new Date(d + 'T00:00:00').getDay()];
+    const snap = { date: d.slice(5).replace('-', '/') + ' 周' + wd };
+    const plan = effTasks(d).map((x) => ({ id: x.id, text: x.text, done: !!x.done }));
+    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
+    snap.plan = plan;
+    const ld = lifeDay(d);
+    const meals = ld.meals || {};
+    snap.life = {
+      meals: { bf: !!meals.bf, lunch: !!meals.lunch, dinner: !!meals.dinner, exercise: !!ld.exercise },
+      water: ld.water | 0, bowel: !!ld.bowel
+    };
+    const ws = store.words;
+    snap.words = {
+      pool: dailyWordPool(),
+      todayCnt: (day(d).en.wordCount) || 0,
+      totalLearned: ws.learned.length,
+      goal: store.goals.word || 0
+    };
+    snap.spellPool = dailySpellPool();
+    snap.math = dailyMathList();
+    const allP = majorAllPoints();
+    const perP = store.modeCounts.majPoints[store.mode];
+    snap.majorPoints = {
+      items: pickFresh('majPoints', allP, Math.min(perP, allP.length), 'majpts' + d + store.mode)
+        .map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c })),
+      count: perP
+    };
+    const allC = majorAllChoice();
+    const allJ = majorAllJudge();
+    const cqs = pickFresh('majChoice', allC, Math.min(store.modeCounts.majChoice[store.mode], allC.length), 'majc' + d)
+      .map((q) => ({ type: 'choice', id: q.id, book: q.book, q: q.q, options: q.o, answer: q.k }));
+    const jqs = pickFresh('majJudge', allJ, Math.min(store.modeCounts.majJudge[store.mode], allJ.length), 'majjudge' + d)
+      .map((q) => ({ type: 'judge', id: q.id, book: q.book, q: q.q, answer: q.a ? 0 : 1 }));
+    snap.majorQuiz = { questions: cqs.concat(jqs) };
+    return snap;
+  }
+  function applyPlanToggle(id) {
+    if (!id) return;
+    if (id.indexOf('@') >= 0) { store.planDone[id] = !store.planDone[id]; }
+    else { const arr = store.plan[todayStr()] || []; const t = arr.find((x) => x.id === id); if (t) t.done = !t.done; }
+    save();
+  }
+  function applyMajorWrong(q) {
+    if (!q) return;
+    if (q.type === 'judge') {
+      const wid = q.id || ('j#' + q.q);
+      if (!store.majorWrong.find((x) => x.type === 'judge' && x.wid === wid)) {
+        store.majorWrong.push({ type: 'judge', wid: wid, q: q.q, o: ['正确', '错误'], k: q.answer, s: q.s, src: q.src || q.book });
+        save();
+      }
+    } else {
+      if (!store.majorWrong.find((x) => x.q === q.q)) {
+        store.majorWrong.push({ q: q.q, o: q.options, k: q.answer, s: q.s, src: q.src || q.book });
+        save();
+      }
+    }
+  }
+  function applyWidgetActions(actions) {
+    if (!actions || !actions.length) return;
+    let changed = false;
+    for (const a of actions) {
+      if (!a || !a.t) continue;
+      try {
+        if (a.t === 'planToggle') { applyPlanToggle(a.id); changed = true; }
+        else if (a.t === 'lifeMeal') { const dd = todayStr(); const l = lifeDay(dd); if (a.key === 'exercise') l.exercise = a.val; else l.meals[a.key] = a.val; save(); changed = true; }
+        else if (a.t === 'lifeWater') { lifeDay(todayStr()).water = a.val | 0; save(); changed = true; }
+        else if (a.t === 'lifeBowel') { lifeDay(todayStr()).bowel = a.val ? 1 : 0; save(); changed = true; }
+        else if (a.t === 'wordLearned') { const idx = a.idx; if (typeof idx === 'number' && idx >= 0 && idx < EN_WORDS.length && !store.words.learned.includes(idx)) { store.words.learned.push(idx); const dd = day(todayStr()); dd.en.wordCount = (dd.en.wordCount || 0) + 1; save(); changed = true; } }
+        else if (a.t === 'mathOk') { if (a.q) { bumpMath(a.q); changed = true; } }
+        else if (a.t === 'mathWrong') { if (a.q) { bumpMath(a.q); if (!store.mathWrong.find((x) => x.q === a.q.q)) { store.mathWrong.push({ q: a.q.q, a: a.q.a, s: a.q.s, src: a.q.src, type: a.q.type || a.q.tp || 'math' }); save(); } changed = true; } }
+        else if (a.t === 'majFavPoint') { majFavToggle('points', a.id); changed = true; }
+        else if (a.t === 'majFav') { majFavToggle(a.type, a.id); changed = true; }
+        else if (a.t === 'majWrong') { applyMajorWrong(a.q); changed = true; }
+      } catch (e) { }
+    }
+    if (changed) doWidgetPush();
+  }
+  let _pushTimer = null;
+  function scheduleWidgetPush() {
+    if (_pushTimer) return;
+    _pushTimer = setTimeout(function () { _pushTimer = null; doWidgetPush(); }, 350);
+  }
+  function doWidgetPush() {
+    if (!widgetBridgeReady()) return;
+    try {
+      const snap = buildSnapshot();
+      window.Capacitor.Plugins.KaoyanBridge.pushSnapshot({ value: JSON.stringify(snap) });
+    } catch (e) { }
+  }
+  let _pullTimer = null;
+  function startWidgetPull() {
+    if (_pullTimer || !widgetBridgeReady()) return;
+    _pullTimer = setInterval(function () {
+      try {
+        window.Capacitor.Plugins.KaoyanBridge.pullActions().then(function (res) {
+          const arr = (res && res.actions) ? JSON.parse(res.actions) : [];
+          if (arr && arr.length) applyWidgetActions(arr);
+        }).catch(function () { });
+      } catch (e) { }
+    }, 1500);
+  }
+  function initWidgetBridge() {
+    if (!widgetBridgeReady()) return;
+    doWidgetPush();
+    startWidgetPull();
+  }
+  const _origSave = save;
+  save = function () { try { _origSave(); } catch (e) { } scheduleWidgetPush(); };
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { doWidgetPush(); startWidgetPull(); } });
+  try { if (window.Capacitor && window.Capacitor.App && window.Capacitor.App.addListener) window.Capacitor.App.addListener('resume', function () { doWidgetPush(); startWidgetPull(); }); } catch (e) { }
+  initWidgetBridge();
+})();
