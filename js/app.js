@@ -1257,7 +1257,21 @@
         mask.classList.add('hidden');
       };
       // 阅读页滑动时关闭句子译文弹窗（满足「滑页即收起译文」）
-      mask.querySelector('.modal-body').addEventListener('scroll', () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); });
+      // 注意：只在真实用户手势 / 明显滚动时收起。弹窗展开会引发布局回流并触发一次 scroll，
+      // 若不加过滤会把刚打开的译文立刻收起来（表现为「译文弹窗自动消失」）。
+      const mbody = mask.querySelector('.modal-body');
+      if (mbody) {
+        let lastTop = mbody.scrollTop;
+        const hidePop = () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); };
+        mbody.addEventListener('wheel', hidePop, { passive: true });
+        mbody.addEventListener('touchmove', hidePop, { passive: true });
+        mbody.addEventListener('scroll', () => {
+          const top = mbody.scrollTop;
+          const fresh = (Date.now() - spShownAt) < 500;   // 弹窗刚打开，忽略伪滚动
+          if (!fresh && Math.abs(top - lastTop) > 24) hidePop();
+          lastTop = top;
+        }, { passive: true });
+      }
     }
     mask.querySelector('.modal-title').textContent = title;
     mask.querySelector('.modal-body').innerHTML = bodyHTML;
@@ -1594,6 +1608,7 @@
     next.onclick = () => startUltimate(host);
   }
 
+  let spShownAt = 0;            // 句子译文弹窗最近一次打开时间（用于过滤布局回流引起的伪滚动）
   function showSentencePopup(el, en, zh) {
     let pop = $('#sentencePop');
     if (!pop) {
@@ -1603,6 +1618,7 @@
     }
     pop.innerHTML = `<div class="sp-en">${esc(en)}</div><div class="sp-zh">${esc(zh)}</div>`;
     pop.classList.remove('hidden');
+    spShownAt = Date.now();
     const r = el.getBoundingClientRect();
     pop.style.visibility = 'hidden';
     const pw = pop.offsetWidth, ph = pop.offsetHeight;
