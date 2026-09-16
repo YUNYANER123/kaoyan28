@@ -107,20 +107,20 @@
       customCats: [],               // [{id,name}] 用户手动新建的分类
       life: {},                     // {date:{wake,sleep,meals,exercise,water,period,mood,note,bowel}}
       periods: [],                  // [{start,end}]
-      mathWrongSec: { 高数: [], 线代: [], 概率: [] },  // 数学分板块错题本（高数/线代/概率论各自一本）
+      mathWrong: [],                // 错题本（索引集合记录题面）
       majorWrong: [],               // 专业课错题本（选择题 / 判断题答错）
       majorFavs: { points: [], choice: [], judge: [], short: [] },  // 专业课收藏（知识点/选择题/判断题/简答题）
       weekReviews: [],
       monthReviews: [],
-      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: '', aiModel: 'deepseek-chat', aiProxyToken: '' },
+      settings: { en: '1', math: '1', books: [], periodHidden: false, aiProxyUrl: 'https://kaoyan-ai-proxy-layjuofkzw.cn-chengdu.fcapp.run', aiModel: 'deepseek-chat' },
       modeCounts: {
         enRead: { easy: 2, hard: 5 },
         enTrans: { easy: 3, hard: 3 },
         enTranslateExam: { easy: 3, hard: 3 },
         enZhenti: { easy: 1, hard: 3 },
-        mathGD: { easy: 3, hard: 6 },
-        mathXD: { easy: 3, hard: 6 },
-        mathGL: { easy: 3, hard: 6 },
+        mathGD: { easy: 1, hard: 3 },
+        mathXD: { easy: 1, hard: 3 },
+        mathGL: { easy: 1, hard: 3 },
         mathF: { easy: 2, hard: 5 },
         majPoints: { easy: 3, hard: 3 },
         majChoice: { easy: 0, hard: 10 },
@@ -142,10 +142,7 @@
       checkins: s.checkins || {}, dailyStudy: s.dailyStudy || {},
       plan: s.plan || {}, planTpl: s.planTpl || [], planDone: s.planDone || {}, planHide: s.planHide || {},
       life: s.life || {}, periods: s.periods || {},
-      mathWrongSec: (s.mathWrongSec && typeof s.mathWrongSec === 'object' && !Array.isArray(s.mathWrongSec))
-        ? Object.assign({ 高数: [], 线代: [], 概率: [] }, s.mathWrongSec)
-        : { 高数: Array.isArray(s.mathWrong) ? s.mathWrong.map((x) => Object.assign({}, x)) : [], 线代: [], 概率: [] },
-      majorWrong: Array.isArray(s.majorWrong) ? s.majorWrong : [],
+      mathWrong: s.mathWrong || [], majorWrong: Array.isArray(s.majorWrong) ? s.majorWrong : [],
       majorFavs: Object.assign({ points: [], choice: [], judge: [], short: [] }, s.majorFavs || {}),
       aiBank: (s.aiBank && typeof s.aiBank === 'object' && !Array.isArray(s.aiBank)) ? s.aiBank : {},
       aiShown: (s.aiShown && typeof s.aiShown === 'object' && !Array.isArray(s.aiShown)) ? s.aiShown : {},
@@ -159,203 +156,7 @@
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { toast('保存失败：存储空间不足'); }
-    pushWidgetSnapshot();
   }
-
-  /* ============ 原生桌面小组件 数据桥 ============ */
-  // 网页（PWA）里没有原生插件，getBridge() 返回 null，下列调用全部安全跳过。
-  let _bridge = null;
-  function getBridge() {
-    if (_bridge) return _bridge;
-    try {
-      if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-        _bridge = window.Capacitor.registerPlugin('KaoyanBridge');
-      }
-    } catch (e) { _bridge = null; }
-    return _bridge;
-  }
-  function pushWidgetSnapshot() {
-    const br = getBridge();
-    if (!br) return;
-    try { br.pushSnapshot({ value: JSON.stringify(buildWidgetSnapshot()) }); } catch (e) {}
-  }
-  function pullAndApplyWidgetActions() {
-    const br = getBridge();
-    if (!br) return;
-    br.pullActions().then((r) => {
-      const a = JSON.parse((r && r.actions) || '[]');
-      if (Array.isArray(a) && a.length) { applyWidgetActions(a); pushWidgetSnapshot(); }
-    }).catch(() => {});
-  }
-
-  // 无副作用的确定性选择（不碰 store.aiShown，避免影响 App 自身的每日选题）
-  function pickStable(pool, n, seed) {
-    if (!pool || !pool.length) return [];
-    n = Math.min(n, pool.length);
-    const arr = pool.slice();
-    let h = 0; const s = String(seed);
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    for (let i = arr.length - 1; i > 0; i--) {
-      h = (h * 1103515245 + 12345) >>> 0;
-      const j = h % (i + 1);
-      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-    }
-    return arr.slice(0, n);
-  }
-
-  function buildWidgetSnapshot() {
-    const t = todayStr();
-    const hard = store.mode === 'hard';
-    const isM2 = (store.settings && store.settings.math) === '2';
-
-    // 1) 今日计划
-    const plan = [];
-    (store.plan[t] || []).forEach((it) => plan.push({ id: it.id, text: it.text, done: !!it.done }));
-    (store.planTpl || []).forEach((tp) => {
-      if (tp.date && tp.date > t) return;
-      if (tp.dateEnd && tp.dateEnd < t) return;
-      const key = tp.id + '@' + t;
-      plan.push({ id: key, text: tp.text, done: !!(store.planDone && store.planDone[key]) });
-    });
-    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
-
-    // 2) 生活记录
-    const ld = lifeDay(t);
-    const life = {
-      meals: { bf: !!ld.meals.bf, lunch: !!ld.meals.lunch, dinner: !!ld.meals.dinner, exercise: !!ld.meals.exercise },
-      water: ld.water || 0,
-      bowel: !!ld.bowel
-    };
-
-    // 3) 背单词
-    const ws = store.words;
-    const wpool = [];
-    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
-      for (let k = 0; k < 20; k++) {
-        const i = (ws.idx + k) % EN_WORDS.length;
-        const w = EN_WORDS[i];
-        wpool.push({ idx: i, word: w.w, phonetic: w.p || '', meaning: w.m });
-      }
-    }
-    const words = {
-      idx: ws.idx,
-      todayCnt: (day(t).en.wordCount) || 0,
-      totalLearned: (ws.learned || []).length,
-      goal: store.goals.word || 0,
-      pool: wpool
-    };
-
-    // 4) 随机拼写池
-    const spellPool = [];
-    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
-      pickStable(EN_WORDS.map((_, i) => i), Math.min(12, EN_WORDS.length), 'spell' + t).forEach((i) => {
-        const w = EN_WORDS[i];
-        spellPool.push({ meaning: w.m, answer: w.w });
-      });
-    }
-
-    // 5) 数学今日题
-    const math = [];
-    try {
-      const s = subj();
-      const seed = 'math' + t + store.mode;
-      const gd = withAI('mathGD', gdPool());
-      const xd = withAI('mathXD', (typeof MATH_XD !== 'undefined') ? MATH_XD : []);
-      const gl = withAI('mathGL', (typeof MATH_GL !== 'undefined') ? MATH_GL : []);
-      const segs = [['g', gd, store.modeCounts.mathGD[store.mode]]];
-      segs.push(['x', xd, store.modeCounts.mathXD[store.mode]]);
-      if (!isM2) segs.push(['l', gl, store.modeCounts.mathGL[store.mode]]);
-      segs.forEach((seg) => {
-        const tag = seg[0], pool = seg[1], n = seg[2];
-        const np = hard ? n : 1;
-        pickStable(pool, np, seed + tag).forEach((q) => {
-          math.push({ q: q.q, a: q.a, s: q.s, src: q.src, type: tag === 'g' ? '高数' : tag === 'x' ? '线代' : '概率' });
-        });
-      });
-    } catch (e) {}
-
-    // 6) 专业课知识点
-    let majPoints = { count: 0, items: [] };
-    try {
-      const all = majorAllPoints();
-      const per = store.modeCounts.majPoints[store.mode];
-      const items = pickStable(all, per, 'majpts' + t + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
-      majPoints = { count: items.length, items: items };
-    } catch (e) {}
-
-    // 7) 专业课题目
-    let majQuiz = { choiceCount: 0, judgeCount: 0, questions: [] };
-    try {
-      const cAll = majorAllChoice();
-      const jAll = majorAllJudge();
-      const cn = store.modeCounts.majChoice[store.mode];
-      const jn = store.modeCounts.majJudge[store.mode];
-      const cItems = pickStable(cAll, cn, 'majc' + t).map((q) => ({
-        id: q.id, type: 'choice', book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book
-      }));
-      const jItems = pickStable(jAll, jn, 'majj' + t).map((q) => ({
-        id: q.id, type: 'judge', book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book
-      }));
-      majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
-    } catch (e) {}
-
-    return {
-      date: t, mode: store.mode, isM2: isM2,
-      plan: plan, life: life, words: words, spellPool: spellPool,
-      math: math, majorPoints: majPoints, majorQuiz: majQuiz
-    };
-  }
-
-  function applyWidgetActions(actions) {
-    const t = todayStr();
-    actions.forEach((a) => {
-      try {
-        if (a.t === 'planToggle') {
-          if (a.id && a.id.indexOf('@') >= 0) { store.planDone[a.id] = !store.planDone[a.id]; }
-          else { const arr = store.plan[t] || []; const x = arr.find((y) => y.id === a.id); if (x) x.done = !x.done; }
-        } else if (a.t === 'lifeMeal') {
-          lifeDay(t).meals[a.key] = !!a.val;
-        } else if (a.t === 'lifeWater') {
-          lifeDay(t).water = a.val;
-        } else if (a.t === 'lifeBowel') {
-          lifeDay(t).bowel = !!a.val;
-        } else if (a.t === 'wordLearned') {
-          if (a.idx >= 0 && !(store.words.learned || []).includes(a.idx)) {
-            store.words.learned.push(a.idx);
-            const d = day(t); d.en.wordCount = (d.en.wordCount || 0) + 1;
-          }
-        } else if (a.t === 'mathOk') {
-          if (a.q) bumpMath(a.q);
-        } else if (a.t === 'mathWrong') {
-          if (a.q) { bumpMath(a.q); if (!store.mathWrong.find((x) => x.q === a.q.q)) store.mathWrong.push({ q: a.q.q, a: a.q.a, s: a.q.s, src: a.q.src, type: a.q.type }); }
-        } else if (a.t === 'majFavPoint') {
-          majFavToggle('points', a.id);
-        } else if (a.t === 'majFav') {
-          majFavToggle(a.type, a.id);
-        } else if (a.t === 'majWrong') {
-          const q = a.q || {};
-          if (q.type === 'choice') {
-            if (!store.majorWrong.find((x) => x.q === q.q)) store.majorWrong.push({ q: q.q, o: q.options, k: q.answer, s: q.s, src: q.src || q.book });
-          } else {
-            if (!store.majorWrong.find((x) => x.q === q.q)) store.majorWrong.push({ type: 'judge', wid: q.id, q: q.q, o: ['正确', '错误'], k: q.answer, s: q.s, src: q.src || q.book });
-          }
-        }
-      } catch (e) {}
-    });
-    save();
-  }
-
-  // App 回到前台 / 页面可见时，拉取桌面小组件产生的操作并应用到 store
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') pullAndApplyWidgetActions();
-    });
-  }
-  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-    try { window.Capacitor.Plugins.App.addListener('appStateChange', (st) => { if (st && st.isActive) pullAndApplyWidgetActions(); }); } catch (e) {}
-  }
-  // 启动后稍等片刻，确保数据已渲染再推一次快照给小组件
-  if (typeof setTimeout !== 'undefined') setTimeout(() => pushWidgetSnapshot(), 2000);
 
   // 当日学习数据结构
   function day(d) {
@@ -1252,8 +1053,6 @@
         const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden');
         mask.classList.add('hidden');
       };
-      // 阅读页滑动时关闭句子译文弹窗（满足「滑页即收起译文」）
-      mask.querySelector('.modal-body').addEventListener('scroll', () => { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); });
     }
     mask.querySelector('.modal-title').textContent = title;
     mask.querySelector('.modal-body').innerHTML = bodyHTML;
@@ -1535,7 +1334,7 @@
     let html = `<div class="explain-card">
       <div class="ec-h">讲解 · 第 ${round} 轮</div>
       <div class="ec-w">${esc(w.w)} ${w.p ? `<span class="ec-p">${esc(w.p)}</span>` : ''}</div>
-      <div class="ec-sec">翻译</div>
+      <div class="ec-sec">翻译（各种词性）</div>
       <div class="ec-m">${esc(w.m)}</div>`;
     if (ex.e) {
       html += `<div class="ec-sec">例句</div><div class="ec-e">${esc(ex.e)}</div>`;
@@ -1609,6 +1408,9 @@
     if (top < 8) top = 8;
     pop.style.top = top + 'px'; pop.style.left = left + 'px';
     pop.style.visibility = 'visible';
+    clearTimeout(pop._t);
+    pop._t = setTimeout(() => pop.classList.add('hidden'), 4500);
+    pop.onclick = () => pop.classList.add('hidden');
   }
   function renderEnRead() {
     const host = $('#enRead');
@@ -1835,61 +1637,7 @@
       label: '概率题目', n: 6,
       prompt: () => '生成 6 道考研数学概率论与数理统计题目（随机事件、一维二维随机变量、数字特征、大数定律与中心极限定理、参数估计）。严格输出 JSON：{"items":[{"q":"题目","a":"答案","s":"分步解析","src":"考点出处"}]}。',
       items: (o) => o.items,
-        norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, tp: '概率', q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGDFill: {
-      label: '高数填空题', n: 4,
-      prompt: (s) => '生成 4 道考研数学' + (s.math==='2'?'二':'一') + '高等数学填空题（给题目，答案为一个数值或表达式）。严格输出 JSON：{"items":[{"q":"题目（含空白或问号）","a":"标准答案","s":"解析","src":"考点出处"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathXDFill: {
-      label: '线代填空题', n: 4,
-      prompt: () => '生成 4 道考研数学线性代数填空题（行列式、矩阵、向量组、特征值）。严格输出 JSON：{"items":[{"q":"题目","a":"标准答案","s":"解析","src":"考点出处"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGLFill: {
-      label: '概率填空题', n: 4,
-      prompt: () => '生成 4 道考研数学概率论与数理统计填空题（期望、方差、概率计算）。严格输出 JSON：{"items":[{"q":"题目","a":"标准答案","s":"解析","src":"考点出处"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGDJudge: {
-      label: '高数判断题', n: 3,
-      prompt: (s) => '生成 3 道考研数学' + (s.math === '2' ? '二' : '一') + '高等数学判断题（给一个命题，判断对/错）。严格输出 JSON：{"items":[{"q":"命题陈述","a":true或false,"s":"解析（为何对/错）","src":"考点出处"}]}。命题要贴近真题常考结论，干扰项要有迷惑性。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && typeof x.a === 'boolean') ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: !!x.a, s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathXDJudge: {
-      label: '线代判断题', n: 3,
-      prompt: () => '生成 3 道考研数学线性代数判断题（给一个命题，判断对/错，覆盖行列式、矩阵、向量组、方程组、特征值）。严格输出 JSON：{"items":[{"q":"命题陈述","a":true或false,"s":"解析（为何对/错）","src":"考点出处"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && typeof x.a === 'boolean') ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: !!x.a, s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGLJudge: {
-      label: '概率判断题', n: 3,
-      prompt: () => '生成 3 道考研数学概率论与数理统计判断题（给一个命题，判断对/错，覆盖随机变量、数字特征、大数定律、参数估计）。严格输出 JSON：{"items":[{"q":"命题陈述","a":true或false,"s":"解析","src":"考点出处"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && typeof x.a === 'boolean') ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: !!x.a, s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGDSol: {
-      label: '高数解答题', n: 3,
-      prompt: (s) => '生成 3 道考研数学' + (s.math === '2' ? '二' : '一') + '高等数学解答题（计算/证明题）。严格输出 JSON：{"items":[{"q":"题目","a":"答案/结论","s":"分步解析","src":"真题年份与卷种"}]}。难度贴近真题，解析写清关键步骤。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathXDSol: {
-      label: '线代解答题', n: 3,
-      prompt: () => '生成 3 道考研数学线性代数解答题（计算/证明，覆盖矩阵、向量组、方程组、特征值与二次型）。严格输出 JSON：{"items":[{"q":"题目","a":"答案/结论","s":"分步解析","src":"真题年份与卷种"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
-    },
-    mathGLSol: {
-      label: '概率解答题', n: 3,
-      prompt: () => '生成 3 道考研数学概率论解答题（计算/证明，覆盖随机变量、数字特征、参数估计）。严格输出 JSON：{"items":[{"q":"题目","a":"答案/结论","s":"分步解析","src":"真题年份与卷种"}]}。',
-      items: (o) => o.items,
-      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
+      norm: (x, k, i) => (x.q && x.a) ? { __k: k + '#' + Date.now() + '#' + i, tp: '概率', q: String(x.q), a: String(x.a), s: String(x.s || ''), src: String(x.src || 'AI 生成') } : null
     },
     mathF: {
       label: '数学公式', n: 12,
@@ -1979,7 +1727,7 @@
     const left = freshLeft(key, pool);
     const avail = cloudAvailable();
     const tip = !avail.ok
-      ? '⚠️ ' + avail.msg
+      ? '⚠️ ' + avail.msg + '（' + OFFICIAL_HOST + '）'
       : (aiMsg[key] || ('内容不够？点一下让 AI 现场生成 ' + sp.n + ' 条，永久并入你的题库'));
     return `<div class="ai-box ai-gen">
       <div class="ai-gen-t">题库共 <b>${total}</b> 条 · 本轮还有 <b>${left}</b> 条没出现过</div>
@@ -2108,177 +1856,59 @@
 
   /* ================= 4. 数学 ================= */
   function renderMath() {
-    tabSwitch('math', { q: renderMathQ, f: renderMathFormulas });
+    tabSwitch('math', { q: renderMathQ, f: renderMathFormulas, r: renderMathWrong });
   }
-  /* ============ 数学分板块（高数 / 线代 / 概率论）今日题目 ============ */
-  const MATH_SEC_CODE = { '高数': 'GD', '线代': 'XD', '概率': 'GL' };
-  // 每个板块的三类题型：选择题（四选一，可点选自判）、填空题（可输入自填）、解答题（点击显示答案）
-  const MATH_TYPE_LABEL = { choice: '选择题', fill: '填空题', sol: '解答题' };
-  const KEYS = {
-    '高数': { choice: 'mathGD',  fill: 'mathGDFill',  sol: 'mathGDSol' },
-    '线代': { choice: 'mathXD',  fill: 'mathXDFill',  sol: 'mathXDSol' },
-    '概率': { choice: 'mathGL',  fill: 'mathGLFill',  sol: 'mathGLSol' }
-  };
-  const MATH_SEC_KEYS = {
-    '高数': [['mathGD', '选择题'], ['mathGDFill', '填空题'], ['mathGDSol', '解答题']],
-    '线代': [['mathXD', '选择题'], ['mathXDFill', '填空题'], ['mathXDSol', '解答题']],
-    '概率': [['mathGL', '选择题'], ['mathGLFill', '填空题'], ['mathGLSol', '解答题']]
-  };
-  // 判断一道题是否为「四选一选择题」：题干含 (A)(B)(C)(D) 选项且答案含「选 X」
-  function isMathMC(q, a) {
-    return /[\(（]\s*[A-Da-d]\s*[\)）]/.test(q || '') && /选\s*[A-Da-d]/i.test(a || '');
-  }
-  function mathCorrectLetter(a) {
-    const m = /选\s*([A-Da-d])/i.exec(a || '');
-    return m ? m[1].toUpperCase() : '';
-  }
-  // 按板块归集「选择 / 填空 / 解答」三类题库（原题库中「求…=？」计算题归为填空）
-  function mathBanksFor(sec) {
-    const pick = (arr) => (typeof arr !== 'undefined' && arr) ? arr : [];
-    let choice, fill, sol;
-    if (sec === '高数') {
-      choice = pick(MATH_GD).filter((x) => isMathMC(x.q, x.a)).concat(pick(MATH_GD_MC_EXTRA));
-      fill = pick(MATH_GD).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_GD_FILL));
-      sol = pick(MATH_GD_SOL);
-    } else if (sec === '线代') {
-      choice = pick(MATH_XD).filter((x) => isMathMC(x.q, x.a));
-      fill = pick(MATH_XD).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_XD_FILL));
-      sol = pick(MATH_XD_SOL);
-    } else {
-      choice = pick(MATH_GL).filter((x) => isMathMC(x.q, x.a));
-      fill = pick(MATH_GL).filter((x) => !isMathMC(x.q, x.a)).concat(pick(MATH_GL_FILL));
-      sol = pick(MATH_GL_SOL);
-    }
-    const k = KEYS[sec];
-    return {
-      choice: withAI(k.choice, choice),
-      fill: withAI(k.fill, fill),
-      sol: withAI(k.sol, sol)
-    };
-  }
-  // 每个板块每日固定 1 选择 + 1 填空 + 1 解答
-  function mathSectionDaily(sec, banks, seed) {
-    const out = [];
-    ['choice', 'fill', 'sol'].forEach((tk) => {
-      const arr = banks[tk] || [];
-      if (!arr.length) return;
-      const picked = pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, 1, seed + tk)[0];
-      if (picked) out.push({ type: tk, q: picked });
-    });
-    return out;
-  }
-  function mathQuestionHTML(sec, item, idx) {
-    const { type, q } = item;
-    const label = type === 'choice' ? '选择题' : type === 'fill' ? '填空题' : '解答题';
-    const cls = type === 'choice' ? 'g' : type === 'fill' ? 'o' : 'p';
-    const head = `<div class="it-h"><span class="badge ${cls}">${label}</span><span class="it-t">第 ${idx + 1} 题</span></div>`;
-    const body = `<div class="it-body">${esc(q.q)}</div>`;
-    const src = `<div class="it-src">题源：${esc(q.src || '')}</div>`;
-    let box = '';
-    if (type === 'choice') {
-      const opts = ['A', 'B', 'C', 'D'].map((L) => `<div class="mb-opt math-opt" data-opt="${L}">${L}</div>`).join('');
-      box = `<div class="mb-opts">${opts}</div>
-        <div class="ans-box hidden" data-ans>
-          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
-          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div>
-        </div>`;
-    } else if (type === 'fill') {
-      box = `<div class="fill-wrap"><input class="fill-input" type="text" placeholder="在这里填写你的答案…" /><button class="ans-btn" data-a="submit">提交</button></div>
-        <div class="ans-box hidden" data-ans>
-          <div class="ans-l">参考答案</div><div class="ans-v">${esc(q.a || '')}</div>
-          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
-          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button><button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入${esc(sec)}错题本</button></div>
-        </div>`;
-    } else {
-      box = `<button class="ans-btn" data-a="show">显示答案与解析</button>
-        <div class="ans-box hidden" data-ans>
-          <div class="ans-l">答案</div><div class="ans-v">${esc(q.a || '')}</div>
-          <div class="ans-l">解析</div><div class="ans-s">${esc(q.s || '')}</div>
-          <div class="sb-btns" style="margin-top:8px"><button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button></div>
-        </div>`;
-    }
-    return `<div class="item" data-mi="${idx}" data-sec="${esc(sec)}" data-type="${type}">${head}${body}${src}${box}</div>`;
-  }
-  function addMathWrong(sec, item) {
-    const q = item.q;
-    const arr = store.mathWrongSec[sec] || (store.mathWrongSec[sec] = []);
-    if (!arr.find((x) => x.q === q.q)) { arr.push({ q: q.q, a: q.a, s: q.s, src: q.src, type: item.type }); save(); }
-  }
-  function openMathWrong(sec) {
-    const list = store.mathWrongSec[sec] || [];
-    const body = list.length ? list.map((q, i) => {
-      const label = q.type === 'fill' ? '填空题' : q.type === 'sol' ? '解答题' : '选择题';
-      const ans = q.type === 'judge' ? (q.a ? '对 ✓' : '错 ✗') : esc(q.a);
-      return `<div class="item"><div class="it-h"><span class="badge r">${label}</span></div><div class="it-body">${esc(q.q)}</div><div class="it-src">题源：${esc(q.src)}</div><div class="it-key">答案：${ans}<br>${esc(q.s)}</div><button class="ans-btn" data-del="${sec}@${i}" style="background:rgba(255,123,146,.12);color:#E5476A;margin-top:8px">移除该题</button></div>`;
-    }).join('') : `<div class="empty"><div class="e-cat">🌟</div>「${sec}」还没有错题，继续保持！</div>`;
-    openModal('❌ ' + sec + '错题本（' + list.length + '）', body);
-    const m = document.getElementById('modalMask');
-    if (m) m.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
-      const [sc, ix] = b.dataset.del.split('@');
-      store.mathWrongSec[sc].splice(+ix, 1); save(); openMathWrong(sc);
-    });
-  }
-  let mathSecActive = null;
   function renderMathQ() {
-    const host = $('#mathQ'); if (!host) return;
-    const isM2 = subj().math === '2';
-    const sections = isM2 ? ['高数', '线代'] : ['高数', '线代', '概率'];
-    if (!mathSecActive || sections.indexOf(mathSecActive) < 0) mathSecActive = sections[0];
-    const tabs = sections.map((sec) => `<button class="mtab ${sec === mathSecActive ? 'on' : ''}" data-ms="${esc(sec)}">${sec}</button>`).join('');
-    host.innerHTML = `<div class="mtabs">${tabs}</div><div id="mathSecBody"></div>`;
-    host.querySelectorAll('.mtab').forEach((b) => { b.onclick = () => { mathSecActive = b.dataset.ms; renderMathQ(); }; });
-    renderMathSection(mathSecActive);
-  }
-  function renderMathSection(sec) {
-    const body = document.getElementById('mathSecBody'); if (!body) return;
-    const banks = mathBanksFor(sec);
-    const seed = 'math' + sec + todayStr() + store.mode;
-    const qlist = mathSectionDaily(sec, banks, seed);
-    const wrongN = (store.mathWrongSec[sec] || []).length;
-    const itemsHTML = qlist.length ? qlist.map((item, i) => mathQuestionHTML(sec, item, i)).join('')
-      : `<div class="empty sm">「${sec}」今日题库暂无可刷题（点下方按钮让 AI 生成并并入题库）。</div>`;
-    const ks = KEYS[sec];
-    const aiList = [
-      { key: ks.choice, label: sec + '选择题', total: (banks.choice || []).length },
-      { key: ks.fill,   label: sec + '填空题', total: (banks.fill || []).length },
-      { key: ks.sol,    label: sec + '解答题', total: (banks.sol || []).length }
-    ];
-    body.innerHTML = `
-      <div class="math-sec-h"><span class="ms-t">📐 ${sec} · 今日 ${qlist.length} 题</span><button class="ms-wrong" data-mwrong="${esc(sec)}">❌ 错题本（${wrongN}）</button></div>
-      <div class="math-sec-body">${itemsHTML}</div>
-      ${aiBoxMulti(aiList)}`;
-    const wb = body.querySelector('[data-mwrong]'); if (wb) wb.onclick = () => openMathWrong(sec);
-    wireMathSection(body, sec, qlist);
+    const host = $('#mathQ');
+    const hard = store.mode === 'hard';
+    const t = todayStr();
+    const s = subj();
+    const seed = 'math' + t + store.mode;
+    const gd = withAI('mathGD', gdPool());
+    const xd = withAI('mathXD', (typeof MATH_XD !== 'undefined') ? MATH_XD : []);
+    const gl = withAI('mathGL', (typeof MATH_GL !== 'undefined') ? MATH_GL : []);
+    const nGD = store.modeCounts.mathGD[store.mode];
+    const nXD = store.modeCounts.mathXD[store.mode];
+    const nGL = store.modeCounts.mathGL[store.mode];
+    const gdP = pickFresh('mathGD', gd, nGD, seed + 'g');
+    const xdP = pickFresh('mathXD', xd, nXD, seed + 'x');
+    const glP = (s.math !== '2') ? pickFresh('mathGL', gl, nGL, seed + 'l') : [];
+    const pick = hard ? [...gdP, ...xdP, ...glP] : [gdP[0], xdP[0], ...(glP[0] ? [glP[0]] : [])].filter(Boolean);
+    const typeName = (q) => q.tp || (MATH_GD.includes(q) ? '高数' : MATH_XD.includes(q) ? '线代' : '概率');
+    const aiBox = aiBoxMulti([
+      { key: 'mathGD', label: '高数', total: gd.length },
+      { key: 'mathXD', label: '线代', total: xd.length }
+    ].concat(s.math === '2' ? [] : [{ key: 'mathGL', label: '概率', total: gl.length }]));
+    const gdTxt = '高数 ' + (hard ? nGD : 1) + (s.math === '2' ? '（不含数一专属）' : '');
+    const hint = hard
+      ? `高强度版：今日 ${gdTxt} + 线代 ${nXD}${s.math === '2' ? '' : ' + 概率 ' + nGL}`
+      : `轻松版：今日 高数 1 · 线代 1${s.math === '2' ? '' : ' · 概率 1'}`;
+    host.innerHTML = `<div class="hint">${hint} · 题源已标注，做完看解析</div>` +
+      pick.map((q, i) => {
+        const tn = typeName(q);
+        const cls = tn === '高数' ? 'g' : tn === '线代' ? 'o' : 'p';
+        return `<div class="item" data-mi="${i}">
+          <div class="it-h"><span class="badge ${cls}">${tn}</span><span class="it-t">第 ${i + 1} 题</span></div>
+          <div class="it-body">${esc(q.q)}</div>
+          <div class="it-src">题源：${esc(q.src)}</div>
+          <button class="ans-btn" data-a="show">显示答案与解析</button>
+          <div class="ans-box hidden" data-ans>
+            <div class="ans-l">答案</div><div class="ans-v">${esc(q.a)}</div>
+            <div class="ans-l">解析</div><div class="ans-s">${esc(q.s)}</div>
+            <div class="sb-btns" style="margin-top:8px">
+              <button data-a="ok" style="background:linear-gradient(135deg,#43C9A0,#7FE0C0);color:#fff">我会了 ✓</button>
+              <button data-a="wrong" style="background:rgba(255,123,146,.16);color:#E5476A">加入错题本</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('') + aiBox;
     wireAiGen();
-    ['choice', 'fill', 'sol'].forEach((tk) => { const arr = banks[tk] || []; if (arr.length) aiMaybeAuto(KEYS[sec][tk], arr, 1); });
-  }
-  function wireMathSection(body, sec, qlist) {
-    body.querySelectorAll('.item[data-mi]').forEach((el) => {
-      const i = +el.dataset.mi; const item = qlist[i]; if (!item) return;
-      const { type, q } = item;
-      const ansBox = el.querySelector('[data-ans]');
-      if (type === 'choice') {
-        const correct = mathCorrectLetter(q.a);
-        el.querySelectorAll('.math-opt').forEach((ob) => {
-          ob.onclick = () => {
-            const L = ob.dataset.opt;
-            el.querySelectorAll('.math-opt').forEach((e) => e.classList.remove('corr', 'wrong'));
-            if (L === correct) ob.classList.add('corr');
-            else { ob.classList.add('wrong'); const c = el.querySelector('.math-opt[data-opt="' + correct + '"]'); if (c) c.classList.add('corr'); }
-            if (ansBox) ansBox.classList.remove('hidden');
-          };
-        });
-      } else if (type === 'fill') {
-        const submitBtn = el.querySelector('[data-a="submit"]');
-        if (submitBtn) submitBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); };
-      } else {
-        const showBtn = el.querySelector('[data-a="show"]');
-        if (showBtn) showBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); showBtn.classList.add('hidden'); };
-      }
-      const okBtn = el.querySelector('[data-a="ok"]');
-      if (okBtn) okBtn.onclick = () => { bumpMath(); toast('棒！已记录'); };
-      const wrongBtn = el.querySelector('[data-a="wrong"]');
-      if (wrongBtn) wrongBtn.onclick = () => { addMathWrong(sec, item); toast('已加入' + sec + '错题本'); };
+    $$('#mathQ .item').forEach((el) => {
+      const i = +el.dataset.mi; const q = pick[i];
+      if (!q) return;
+      el.querySelector('[data-a="show"]').onclick = () => { el.querySelector('[data-ans]').classList.remove('hidden'); el.querySelector('[data-a="show"]').classList.add('hidden'); };
+      el.querySelector('[data-a="ok"]').onclick = () => { bumpMath(q); toast('棒！已记录'); };
+      el.querySelector('[data-a="wrong"]').onclick = () => { bumpMath(q); if (!store.mathWrong.find((x) => x.q === q.q)) { store.mathWrong.push({ q: q.q, a: q.a, s: q.s, src: q.src, type: typeName(q) }); save(); } toast('已加入错题本'); renderMathWrong(); };
     });
   }
   function bumpMath(q) {
@@ -2308,23 +1938,13 @@
   }
   function renderMathWrong() {
     const host = $('#mathR');
-    const s = subj();
-    const sections = s.math === '2' ? ['高数', '线代'] : ['高数', '线代', '概率'];
-    const total = sections.reduce((a, sec) => a + (store.mathWrongSec[sec] || []).length, 0);
-    if (!total) { host.innerHTML = `<div class="empty"><div class="e-cat">🌟</div>还没有错题，继续保持！</div>`; return; }
-    host.innerHTML = sections.map((sec) => {
-      const list = store.mathWrongSec[sec] || [];
-      const items = list.length ? list.map((q, i) => {
-        const label = q.type === 'fill' ? '填空题' : q.type === 'sol' ? '解答题' : '选择题';
-        const ans = q.type === 'judge' ? (q.a ? '对 ✓' : '错 ✗') : esc(q.a);
-        return `<div class="item"><div class="it-h"><span class="badge r">${label}</span></div><div class="it-body">${esc(q.q)}</div><div class="it-src">题源：${esc(q.src)}</div><div class="it-key">答案：${ans}<br>${esc(q.s)}</div><button class="ans-btn" data-del="${sec}@${i}" style="background:rgba(255,123,146,.12);color:#E5476A;margin-top:8px">移除该题</button></div>`;
-      }).join('') : `<div class="empty sm">「${sec}」暂无错题</div>`;
-      return `<div class="sec-title">${sec}错题本（${list.length}）</div>${items}`;
-    }).join('');
-    $$('#mathR [data-del]').forEach((b) => b.onclick = () => {
-      const [sc, ix] = b.dataset.del.split('@');
-      store.mathWrongSec[sc].splice(+ix, 1); save(); renderMathWrong();
-    });
+    if (!store.mathWrong.length) { host.innerHTML = `<div class="empty"><div class="e-cat">🌟</div>还没有错题，继续保持！</div>`; return; }
+    host.innerHTML = `<div class="sec-title">我的错题本（${store.mathWrong.length}）</div>` + store.mathWrong.map((q, i) =>
+      `<div class="item"><div class="it-h"><span class="badge r">${esc(q.type)}</span><span class="it-t">${esc(q.q)}</span></div>
+       <div class="it-src">题源：${esc(q.src)}</div>
+       <div class="it-key">答案：${esc(q.a)}<br>${esc(q.s)}</div>
+       <button class="ans-btn" data-del="${i}" style="background:rgba(255,123,146,.12);color:#E5476A;margin-top:8px">移除该题</button></div>`).join('');
+    $$('#mathR [data-del]').forEach((b) => b.onclick = () => { store.mathWrong.splice(+b.dataset.del, 1); save(); renderMathWrong(); });
   }
 
   /* ================= 5. 专业课 ================= */
@@ -2399,7 +2019,7 @@
       if (!/^https?:\/\//.test(url)) return { ok: false, msg: '请先在「设置 → AI 代理」填写 Worker 代理地址' };
       return { ok: true, msg: '' };
     }
-    return { ok: false, msg: 'AI 生成未配置：请在「设置 → AI 代理」填写自建 Worker 地址（或部署你自己的 AI 代理）后即可使用。' };
+    return { ok: false, msg: 'AI 生成未配置：在官方地址 miaoshangan-kaoyan.app.workbuddy.host 使用免费 AI，或在「设置 → AI 代理」填写自建 Worker 地址' };
   }
 
   // 云端共享题库：别人生成过的书，你直接用，不用再消耗一次生成。
@@ -2476,11 +2096,9 @@
       ],
       stream: true
     };
-    const headers = { 'Content-Type': 'application/json' };
-    if (s.aiProxyToken) headers['x-api-key'] = s.aiProxyToken;
     const resp = await fetch(url, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!resp.ok) {
@@ -2678,25 +2296,12 @@
     const per = isEasy ? store.modeCounts.majPoints.easy : store.modeCounts.majPoints.hard;
     const pick = pickFresh('majPoints', all, Math.min(per, all.length), 'majpts' + todayStr() + (isEasy ? 'e' : 'h'));
     const favPts = majFavItems('points');
+    const favHTML = favPts.length ? `<div class="fav-box"><div class="fav-h">⭐ 我的收藏知识点（${favPts.length}）</div>${favPts.map((p) => `<div class="item" data-fid="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn on" data-fav="points" data-id="${esc(p.id)}" title="取消收藏">★</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>` : '';
     const dailyHTML = `<div class="maj-pts">${pick.map((p) => `<div class="item blur" data-pt="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn ${isMajFav('points', p.id) ? 'on' : ''}" data-fav="points" data-id="${esc(p.id)}" title="收藏">${isMajFav('points', p.id) ? '★' : '☆'}</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>`;
-    host.innerHTML = majWarnHTML()
-      + `<div class="maj-fav-bar"><button class="mview" data-majfav>⭐ 我的收藏知识点（${favPts.length}）</button></div>`
-      + `<div class="hint">专业课知识点 / 公式${isEasy ? '（轻松版·理解为主）' : '（备考版）'} · 今日 ${pick.length} 条（共 ${all.length} 条）· 点⭐收藏</div>`
-      + dailyHTML + aiBoxHTML('majPoints', all);
+    host.innerHTML = majWarnHTML() + `<div class="hint">专业课知识点 / 公式${isEasy ? '（轻松版·理解为主）' : '（备考版）'} · 今日 ${pick.length} 条（共 ${all.length} 条）· 点击条目切换遮盖 / 显示，点 ⭐ 收藏</div>` + favHTML + dailyHTML + aiBoxHTML('majPoints', all);
     $$('#majP .item[data-pt]').forEach((li) => li.onclick = () => li.classList.toggle('blur'));
     $$('#majP [data-fav]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); majFavToggle(b.dataset.fav, b.dataset.id); renderMajorPoints(isEasy); });
-    const favBtn = host.querySelector('[data-majfav]');
-    if (favBtn) favBtn.onclick = () => openMajorFavs(isEasy);
     wireMajGen(); wireAiGen();
-  }
-  function openMajorFavs(isEasy) {
-    const favs = majFavItems('points');
-    const body = favs.length
-      ? favs.map((p) => `<div class="item"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn on" data-fav="points" data-id="${esc(p.id)}" title="取消收藏">★</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')
-      : `<div class="empty"><div class="e-cat">⭐</div>还没有收藏的知识点。<br>在知识点列表里点 ⭐ 即可收藏，会汇总到这里。</div>`;
-    openModal('⭐ 我的收藏知识点（' + favs.length + '）', body);
-    const m = document.getElementById('modalMask');
-    if (m) m.querySelectorAll('[data-fav]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); majFavToggle(b.dataset.fav, b.dataset.id); renderMajorPoints(isEasy); openMajorFavs(isEasy); });
   }
   function renderMajorChoice() {
     const host = $('#majC');
@@ -3635,27 +3240,23 @@
   function renderAiProxyCard() {
     const s = store.settings;
     const mode = aiProviderMode();
-    const modeTxt = mode === 'workbuddy' ? '当前：官方免费 AI'
+    const modeTxt = mode === 'workbuddy' ? '当前：官方免费 AI（miaoshangan-kaoyan.app.workbuddy.host）'
       : mode === 'custom' ? '当前：自建代理（' + esc(s.aiModel || 'deepseek-chat') + '）'
       : '当前：未配置，AI 不可用';
     const box = document.getElementById('aiProxyCard');
     if (!box) return;
     box.innerHTML = `
-      <div class="set-line col"><span>代理地址（国内代理 URL）</span>
+      <div class="set-line col"><span>代理地址（你的 Worker URL）</span>
         <input id="aiProxyUrl" type="url" placeholder="https://你的代理域名（国内节点，无需 /v1 路径）" value="${esc(s.aiProxyUrl || '')}">
       </div>
       <div class="set-line col"><span>模型名</span>
         <input id="aiModel" type="text" placeholder="deepseek-chat" value="${esc(s.aiModel || 'deepseek-chat')}">
-      </div>
-      <div class="set-line col"><span>访问口令（防陌生人使用，选填）</span>
-        <input id="aiProxyToken" type="password" placeholder="仅当代理开了 AUTH_TOKEN 时填写" value="${esc(s.aiProxyToken || '')}">
       </div>
       <div class="hint">非官方域名（GitHub Pages / 安卓安装包）下，AI 通过你自己的 国内代理（阿里云函数计算 / 腾讯云 Web 函数 / 国内 VPS）调用 DeepSeek，Key 仅存于服务端、不会进入安装包。部署方法见项目 README 的「AI 代理」一节。</div>
       <div class="hint" id="aiProxyMode">${modeTxt}</div>
       <div class="btn-row"><button class="gbtn" id="aiProxySave">保存</button><button class="gbtn" id="aiProxyTest">测试连接</button></div>`;
     document.getElementById('aiProxyUrl').onchange = () => { s.aiProxyUrl = document.getElementById('aiProxyUrl').value.trim(); save(); renderAiProxyCard(); };
     document.getElementById('aiModel').onchange = () => { s.aiModel = document.getElementById('aiModel').value.trim() || 'deepseek-chat'; save(); renderAiProxyCard(); };
-    document.getElementById('aiProxyToken').onchange = () => { s.aiProxyToken = document.getElementById('aiProxyToken').value.trim(); save(); renderAiProxyCard(); };
     document.getElementById('aiProxySave').onclick = () => { toast('AI 代理设置已保存'); };
     document.getElementById('aiProxyTest').onclick = async () => {
       const url = s.aiProxyUrl;
@@ -3664,11 +3265,9 @@
       if (!/^https?:\/\//.test(url)) { toast('请先填写代理地址'); return; }
       btn.disabled = true; btn.textContent = '测试中…';
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (s.aiProxyToken) headers['x-api-key'] = s.aiProxyToken;
         const resp = await fetch(url, {
           method: 'POST',
-          headers,
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: s.aiModel || 'deepseek-chat', messages: [{ role: 'system', content: '只回复 OK' }, { role: 'user', content: 'ping' }], stream: false })
         });
         const j = await resp.json().catch(() => ({}));
@@ -3684,74 +3283,12 @@
     renderSetting();
     if (['math', 'major', 'english'].includes(curPage)) renderPage(curPage);
   }
-  // 原生插件必须显式 registerPlugin 才会挂到 Capacitor.Plugins 上：
-  // 未使用打包器的纯 JS 应用不会自动注册插件，直接读 Capacitor.Plugins.Filesystem 是 undefined。
-  function capPlugin(name) {
-    const cap = window.Capacitor;
-    if (!cap) return null;
-    try {
-      if (cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
-      if (cap.isPluginAvailable && !cap.isPluginAvailable(name)) return null;
-      if (cap.registerPlugin) return cap.registerPlugin(name);
-    } catch (e) { }
-    return null;
-  }
   function exportData() {
-    const json = JSON.stringify(store, null, 2);
-    const filename = 'kaoyan28_backup_' + todayStr() + '.json';
-    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-    if (isNative) {
-      const Filesystem = capPlugin('Filesystem');
-      if (Filesystem) { exportNativeFile(json, filename, Filesystem, capPlugin('Share')); return; }
-      const file = new File([new Blob([json], { type: 'application/json' })], filename, { type: 'application/json' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: '喵上岸备份', text: '考研备考数据备份' })
-          .then(() => toast('已调起系统分享'))
-          .catch((e) => { if (!(e && e.name === 'AbortError')) nativeFallbackText(json, e); });
-        return;
-      }
-      nativeFallbackText(json, { message: '原生文件插件不可用' });
-      return;
-    }
-    // 浏览器（GitHub Pages / 桌面）：直接下载
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-    toast('备份已导出（浏览器会下载 JSON 文件）');
-  }
-  async function exportNativeFile(json, filename, Filesystem, Share) {
-    const w = (dir) => Filesystem.writeFile({ path: filename, data: json, directory: dir, encoding: 'utf8' });
-    let uri = '';
-    try { uri = (await w('CACHE')).uri; }
-    catch (e1) {
-      try { uri = (await w('DOCUMENTS')).uri; }
-      catch (e2) { nativeFallbackText(json, e2); return; }
-    }
-    if (Share && uri) {
-      try {
-        await Share.share({ title: '喵上岸备份', text: '考研备考数据备份', dialogTitle: '保存或发送备份文件', files: [uri] });
-        toast('已生成完整 .json 文件，选“保存到文件 / 网盘 / 微信”即可');
-        return;
-      } catch (e3) { }
-    }
-    try {
-      await w('DOCUMENTS');
-      toast('备份已保存到“文档(Documents)”：' + filename + '，导入时选它即可');
-    } catch (e4) {
-      toast('备份文件已生成：' + filename);
-    }
-  }
-  function nativeFallbackText(json, err) {
-    const msg = (err && (err.message || err.errorMessage || err.code)) || '';
-    const ta = document.createElement('textarea');
-    ta.value = json;
-    ta.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;height:50%;z-index:9999;font-size:12px';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    toast('导出失败' + (msg ? ('：' + msg) : '') + '，已弹出备份文本可手动复制');
-    setTimeout(() => { try { document.body.removeChild(ta); } catch (e) { } }, 30000);
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kaoyan28_backup_' + todayStr() + '.json';
+    a.click(); toast('备份已导出');
   }
   function importData(e) {
     const f = e.target.files[0]; if (!f) return;
@@ -3814,9 +3351,11 @@
       navigator.serviceWorker.register('sw.js').catch(() => { });
     });
   }
-})();
 
   /* ================= 桌面小组件桥接（原生 AppWidget ↔ Web App 数据同步） ================= */
+  // 原生层已就绪：KaoyanBridge.pushSnapshot(value) 写入快照并广播刷新；
+  // KaoyanBridge.pullActions() 取回小组件上产生的操作并清空队列。
+  // 这里负责：把 App 的真实数据 build 成快照推给原生层，并把小组件回传的操作应用到 store。
   function widgetBridgeReady() {
     return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.KaoyanBridge);
   }
@@ -3847,15 +3386,18 @@
     const d = todayStr();
     const wd = '日一二三四五六'[new Date(d + 'T00:00:00').getDay()];
     const snap = { date: d.slice(5).replace('-', '/') + ' 周' + wd };
+    // 1. 计划：今日有效任务，未完成在前、已完成沉底
     const plan = effTasks(d).map((x) => ({ id: x.id, text: x.text, done: !!x.done }));
     plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
     snap.plan = plan;
+    // 2. 生活记录
     const ld = lifeDay(d);
     const meals = ld.meals || {};
     snap.life = {
       meals: { bf: !!meals.bf, lunch: !!meals.lunch, dinner: !!meals.dinner, exercise: !!ld.exercise },
       water: ld.water | 0, bowel: !!ld.bowel
     };
+    // 3. 背单词
     const ws = store.words;
     snap.words = {
       pool: dailyWordPool(),
@@ -3863,8 +3405,11 @@
       totalLearned: ws.learned.length,
       goal: store.goals.word || 0
     };
+    // 4. 随机拼写
     snap.spellPool = dailySpellPool();
+    // 5. 数学今日题
     snap.math = dailyMathList();
+    // 6. 专业课知识点
     const allP = majorAllPoints();
     const perP = store.modeCounts.majPoints[store.mode];
     snap.majorPoints = {
@@ -3872,6 +3417,7 @@
         .map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c })),
       count: perP
     };
+    // 7. 专业课题目（选择题 + 判断题合并，计数 = x + y）
     const allC = majorAllChoice();
     const allJ = majorAllJudge();
     const cqs = pickFresh('majChoice', allC, Math.min(store.modeCounts.majChoice[store.mode], allC.length), 'majc' + d)
@@ -3918,7 +3464,7 @@
         else if (a.t === 'majFavPoint') { majFavToggle('points', a.id); changed = true; }
         else if (a.t === 'majFav') { majFavToggle(a.type, a.id); changed = true; }
         else if (a.t === 'majWrong') { applyMajorWrong(a.q); changed = true; }
-      } catch (e) { }
+      } catch (e) { /* 跳过单条异常动作 */ }
     }
     if (changed) doWidgetPush();
   }
@@ -3932,7 +3478,7 @@
     try {
       const snap = buildSnapshot();
       window.Capacitor.Plugins.KaoyanBridge.pushSnapshot({ value: JSON.stringify(snap) });
-    } catch (e) { }
+    } catch (e) { /* 忽略快照构建/推送异常 */ }
   }
   let _pullTimer = null;
   function startWidgetPull() {
@@ -3951,8 +3497,10 @@
     doWidgetPush();
     startWidgetPull();
   }
+  // 让每一次 save() 都顺带刷新桌面小组件（非 Capacitor 环境下自动跳过）
   const _origSave = save;
   save = function () { try { _origSave(); } catch (e) { } scheduleWidgetPush(); };
+  // 应用回到前台时立即同步一次
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { doWidgetPush(); startWidgetPull(); } });
   try { if (window.Capacitor && window.Capacitor.App && window.Capacitor.App.addListener) window.Capacitor.App.addListener('resume', function () { doWidgetPush(); startWidgetPull(); }); } catch (e) { }
   initWidgetBridge();
