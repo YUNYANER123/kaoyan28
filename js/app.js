@@ -133,6 +133,40 @@
       aiAutoDay: {},               // {key:日期} 每个模块每天最多自动补货一次
     };
   }
+  // 数值兜底：旧存档里缺键 / 存成字符串 / NaN 时，回落到默认值
+  function numOr(v, dflt) {
+    if (typeof v === 'number' && isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '' && isFinite(+v)) return +v;
+    return dflt;
+  }
+  // modeCounts 必须**按模块逐个合并**：整体替换会让旧存档里缺失的键变成 undefined，
+  // 而 undefined 传到 pickStable 会算出 slice(0, NaN) = []，表现为「某模块某个模式永远是空的」。
+  function mergeModeCounts(dd, ss) {
+    const out = {};
+    dd = dd || {};
+    ss = (ss && typeof ss === 'object' && !Array.isArray(ss)) ? ss : {};
+    Object.keys(dd).forEach((k) => {
+      const dv = dd[k] || {}; const sv = (ss[k] && typeof ss[k] === 'object') ? ss[k] : {};
+      out[k] = { easy: numOr(sv.easy, dv.easy), hard: numOr(sv.hard, dv.hard) };
+    });
+    // 存档里有、默认里没有的键也保留（避免用户数据丢失）
+    Object.keys(ss).forEach((k) => {
+      if (out[k]) return;
+      const sv = (ss[k] && typeof ss[k] === 'object') ? ss[k] : {};
+      out[k] = { easy: numOr(sv.easy, 0), hard: numOr(sv.hard, 0) };
+    });
+    return out;
+  }
+  // 读取「某模块在当前模式下的每日题量」；缺键就回落默认值，杜绝 undefined → 空列表。
+  function MODE_LABEL() { return store.mode === 'hard' ? '高强度版' : '轻松版'; }
+  function cnt(key, dflt) {
+    const mc = store.modeCounts && store.modeCounts[key];
+    const v = mc ? mc[store.mode] : undefined;
+    if (typeof v === 'number' && isFinite(v)) return Math.max(0, v);
+    const d = defaults().modeCounts[key];
+    if (d && typeof d[store.mode] === 'number') return Math.max(0, d[store.mode]);
+    return dflt == null ? 0 : dflt;
+  }
   function migrate(s) {
     const d = defaults();
     const merged = Object.assign(d, s, {
@@ -142,6 +176,7 @@
       checkins: s.checkins || {}, dailyStudy: s.dailyStudy || {},
       plan: s.plan || {}, planTpl: s.planTpl || [], planDone: s.planDone || {}, planHide: s.planHide || {},
       life: s.life || {}, periods: s.periods || {},
+      modeCounts: mergeModeCounts(d.modeCounts, s.modeCounts),
       mathWrongSec: (s.mathWrongSec && typeof s.mathWrongSec === 'object' && !Array.isArray(s.mathWrongSec))
         ? Object.assign({ 高数: [], 线代: [], 概率: [] }, s.mathWrongSec)
         : { 高数: Array.isArray(s.mathWrong) ? s.mathWrong.map((x) => Object.assign({}, x)) : [], 线代: [], 概率: [] },
@@ -247,21 +282,67 @@
     return arr.slice(0, n);
   }
 
+  // 组件取题：优先复用 App 今天已经抽好的那一批（只读）。
+  // 绝不能用 pickFresh —— 它内部会调用 save()，而 save() 又会推快照 → 无限递归。
+  function widgetDailyPick(key, pool, n, seed) {
+    try {
+      const rec = store.aiShown && store.aiShown[key];
+      if (rec && rec.d === todayStr() && Array.isArray(rec.ids) && rec.ids.length) {
+        const have = rec.ids.map((id) => pool.find((x) => keyOf(x) === id)).filter(Boolean);
+        if (have.length) return have.slice(0, n);
+      }
+    } catch (e) { }
+    return pickStable(pool, n, seed);
+  }
+  // 把「某板块今日总题量」均分到可用题型上：轮转分配，某题型题库不够就把名额顺延给别的题型。
+  function mathSplit(total, banks) {
+    const types = ['choice', 'fill', 'sol'].filter((tk) => (banks[tk] || []).length);
+    const quota = {};
+    types.forEach((tk) => { quota[tk] = 0; });
+    if (!types.length || total <= 0) return quota;
+    let left = Math.min(total, types.reduce((s, tk) => s + banks[tk].length, 0));
+    let guard = 0;
+    while (left > 0 && guard++ < 500) {
+      let moved = false;
+      for (const tk of types) {
+        if (left <= 0) break;
+        if (quota[tk] < banks[tk].length) { quota[tk]++; left--; moved = true; }
+      }
+      if (!moved) break;
+    }
+    return quota;
+  }
+  // 数学选择题的四个选项是**写在同一段题干里**的（如 "…= ？（A) sin1+cos1 (B) …"），
+  // 数据里没有独立的 options 数组，只能就地解析；解析不出返回 null，调用方退回整段题干。
+  function parseMathOptions(q) {
+    const s = String(q || '');
+    const idx = [];
+    const re = /[（(]\s*([A-Da-d])\s*[)）]/g;
+    let m;
+    while ((m = re.exec(s))) idx.push({ L: m[1].toUpperCase(), i: m.index, end: re.lastIndex });
+    if (idx.length < 4) return null;
+    const four = idx.slice(-4);
+    if (four.map((x) => x.L).join('') !== 'ABCD') return null;
+    const stem = s.slice(0, four[0].i).trim();
+    const opts = four.map((x, k) => s.slice(x.end, k < 3 ? four[k + 1].i : s.length).trim());
+    if (!stem || opts.some((o) => !o)) return null;
+    return { stem: stem, opts: opts };
+  }
+
   function buildWidgetSnapshot() {
     const t = todayStr();
     const hard = store.mode === 'hard';
     const isM2 = (store.settings && store.settings.math) === '2';
 
-    // 1) 今日计划
-    const plan = [];
-    (store.plan[t] || []).forEach((it) => plan.push({ id: it.id, text: it.text, done: !!it.done }));
-    (store.planTpl || []).forEach((tp) => {
-      if (tp.date && tp.date > t) return;
-      if (tp.dateEnd && tp.dateEnd < t) return;
-      const key = tp.id + '@' + t;
-      plan.push({ id: key, text: tp.text, done: !!(store.planDone && store.planDone[key]) });
-    });
-    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
+    // 1) 今日计划 —— 必须复用 App 内的 effTasks(t)。
+    //    它才处理「重复规则 matchRepeat / 单天 vs 跨天区间 / planHide 隐藏」；
+    //    早先自己简化实现只比日期大小，导致每天都会把所有模板都塞进来（组件显示成"我所有的计划"）。
+    const plan = effTasks(t).map((x) => ({
+      id: x.id, text: x.text, done: !!x.done,
+      time: (x.timeMode && x.timeMode !== 'none') ? (x.time || x.timeEnd || '') : ''
+    }));
+    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)
+      || String(a.time || '~').localeCompare(String(b.time || '~')));
 
     // 2) 生活记录
     const ld = lifeDay(t);
@@ -298,7 +379,7 @@
       });
     }
 
-    // 5) 数学今日题（分板块：每科只取 1 道选择 + 1 道填空，不含解答题）
+    // 5) 数学今日题 —— 组件里只放**选择题**（点 A/B/C/D 按钮作答）
     const math = [];
     try {
       const sections = isM2 ? ['高数', '线代'] : ['高数', '线代', '概率'];
@@ -306,21 +387,30 @@
         let banks = null;
         try { banks = mathBanksFor(sec); } catch (e) { banks = null; }
         if (!banks) return;
+        const arr = banks.choice || [];
+        if (!arr.length) return;
+        // 与 App 内「今日 N 题」同源：板块总题量均分后，取属于「选择题」的份数
+        const quota = mathSplit(cnt(KEYS[sec].choice, 3), banks);
+        const n = Math.min(quota.choice || 0, arr.length);
+        if (n <= 0) return;
+        const key = KEYS[sec].choice;
         const seed = 'math' + sec + t + store.mode;
-        ['choice', 'fill'].forEach((tk) => {
-          const arr = banks[tk] || [];
-          if (!arr.length) return;
-          const picked = pickStable(arr, 1, seed + tk)[0];
-          if (picked) math.push({ q: picked.q, a: picked.a, s: picked.s, src: picked.src, type: tk, sec: sec });
+        widgetDailyPick(key, arr, n, seed + 'choice').forEach((q) => {
+          const p = parseMathOptions(q.q);
+          math.push({
+            sec: sec, stem: p ? p.stem : q.q, opts: p ? p.opts : [],
+            k: mathCorrectLetter(q.a), a: q.a || '', s: q.s || '', src: q.src || '',
+            full: q.q || ''
+          });
         });
       });
     } catch (e) {}
 
-    // 6) 专业课知识点
+    // 6) 专业课知识点（用 cnt() 读题量：旧存档缺键时回落默认值，避免组件永远空）
     let majPoints = { count: 0, items: [] };
     try {
       const all = majorAllPoints();
-      const per = store.modeCounts.majPoints[store.mode];
+      const per = cnt('majPoints', 3);
       const items = pickStable(all, per, 'majpts' + t + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
       majPoints = { count: items.length, items: items };
     } catch (e) {}
@@ -330,8 +420,8 @@
     try {
       const cAll = majorAllChoice();
       const jAll = majorAllJudge();
-      const cn = store.modeCounts.majChoice[store.mode];
-      const jn = store.modeCounts.majJudge[store.mode];
+      const cn = cnt('majChoice');
+      const jn = cnt('majJudge');
       const cItems = pickStable(cAll, cn, 'majc' + t).map((q) => ({
         id: q.id, type: 'choice', book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book
       }));
@@ -374,7 +464,13 @@
             bumpMath(a.q);
             const sec = a.q.sec || '高数';
             const arr = store.mathWrongSec[sec] || (store.mathWrongSec[sec] = []);
-            if (!arr.find((x) => x.q === a.q.q)) arr.push({ q: a.q.q, a: a.q.a, s: a.q.s, src: a.q.src, type: a.q.type || 'fill' });
+            // 桌面组件推过来的题目已经把选项拆成了 opts 数组、题干只剩 stem，
+            // 而错题本要的是完整题面，所以优先用 full（原始 q.q）。
+            const qt = a.q.full || a.q.q || a.q.stem || '';
+            if (!qt) return;
+            if (!arr.find((x) => (x.full || x.q) === qt)) {
+              arr.push({ q: qt, full: qt, a: a.q.a, s: a.q.s, src: a.q.src, type: 'choice' });
+            }
           }
         } else if (a.t === 'majFavPoint') {
           majFavToggle('points', a.id);
@@ -1678,7 +1774,7 @@
     const host = $('#enRead');
     const t = todayStr();
     const s = subj();
-    const mc = store.modeCounts.enRead[store.mode];
+    const mc = cnt('enRead', 2);
     // 阅读池：英一始终包含；英语二额外并入英二阅读真题
     let pool = (typeof EN_READINGS !== 'undefined' ? EN_READINGS : []).map((r, i) => ({ r, kind: '1', key: '1:' + i, __k: 'enRead#1#' + i }));
     if (s.en === '2' && typeof EN_READINGS_2 !== 'undefined') {
@@ -1753,14 +1849,14 @@
     const t = todayStr();
     const s = subj();
     const matPool = withAI('enTrans', (typeof EN_TRANSLATIONS !== 'undefined' ? EN_TRANSLATIONS : []));
-    const mats = pickFresh('enTrans', matPool, store.modeCounts.enTrans[store.mode], 'entrans' + t + store.mode);
+    const mats = pickFresh('enTrans', matPool, cnt('enTrans', 3), 'entrans' + t + store.mode);
     // 翻译真题：英一始终有；英语二额外并入英二翻译真题
     let examPool = (typeof EN_TRANSLATE_EXAM !== 'undefined' ? EN_TRANSLATE_EXAM : []).map((m, i) => ({ m, kind: '1', __k: 'enTrExam#1#' + i }));
     if (s.en === '2' && typeof EN_TRANSLATE_EXAM_2 !== 'undefined') {
       examPool = examPool.concat(EN_TRANSLATE_EXAM_2.map((m, i) => ({ m, kind: '2', __k: 'enTrExam#2#' + i })));
     }
     examPool = examPool.concat((store.aiBank.enTrExam || []).map((x) => ({ m: x, kind: 'ai', __k: x.__k })));
-    const exams = pickFresh('enTrExam', examPool, store.modeCounts.enTranslateExam[store.mode], 'entransE' + t + store.mode + s.en);
+    const exams = pickFresh('enTrExam', examPool, cnt('enTranslateExam', 3), 'entransE' + t + store.mode + s.en);
     host.innerHTML = `
       <div class="hint">每日 ${mats.length} 篇网络精翻材料 + ${exams.length} 句翻译真题${s.en === '2' ? '（含英语一、英语二）' : '（英语一）'} · 点开查看全文 / 标准答案</div>
       <div class="sec-title">📚 每日精翻材料（${mats.length} 篇）</div>
@@ -1814,7 +1910,7 @@
     const host = $('#enZhenti');
     const t = todayStr();
     const s = subj();
-    const zhenN = store.modeCounts.enZhenti[store.mode];
+    const zhenN = cnt('enZhenti', 1);
     // 英一=图画作文；英二=图表作文
     const bank = (s.en === '2')
       ? (typeof ZHENTI_CHART !== 'undefined' ? ZHENTI_CHART : [])
@@ -2220,14 +2316,16 @@
       sol: withAI(k.sol, sol)
     };
   }
-  // 每个板块每日固定 1 选择 + 1 填空 + 1 解答
+  // 每个板块的题量取自设置里的「今日题目」（mathGD / mathXD / mathGL）：
+  // 先按题型均分，某题型题库不够就把名额顺延给别的题型。
   function mathSectionDaily(sec, banks, seed) {
+    const quota = mathSplit(cnt(KEYS[sec].choice, 3), banks);
     const out = [];
     ['choice', 'fill', 'sol'].forEach((tk) => {
       const arr = banks[tk] || [];
-      if (!arr.length) return;
-      const picked = pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, 1, seed + tk)[0];
-      if (picked) out.push({ type: tk, q: picked });
+      if (!arr.length || !quota[tk]) return;
+      pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, Math.min(quota[tk], arr.length), seed + tk)
+        .forEach((x) => out.push({ type: tk, q: x }));
     });
     return out;
   }
@@ -2352,7 +2450,7 @@
     const host = $('#mathF');
     const hard = store.mode === 'hard';
     const t = todayStr();
-    const per = store.modeCounts.mathF[store.mode];
+    const per = cnt('mathF', 2);
     const map = formulaSubjMap();
     const seed = 'mathf' + t;
     const subjs = subj().math === '2' ? ['高数', '线代'] : ['高数', '线代', '概率'];
@@ -2396,8 +2494,18 @@
   function renderMajor() {
     ensureMajorData();
     const easy = store.mode !== 'hard';
-    // 轻松版隐藏选择题 / 判断题 / 简答题，只保留知识点
-    $$('[data-tabs="major"] .tab').forEach((t) => { if (t.dataset.t !== 'p') t.classList.toggle('hidden', easy); });
+    // 标签页按「当前模式下该题型的题量」决定显示：>0 显示，=0 隐藏。
+    // 早先是写死「轻松版一律隐藏 选择/判断/简答」，于是轻松版里即使把选择题设成 1 也永远看不到。
+    const vis = {
+      p: cnt('majPoints', 3) > 0,
+      c: cnt('majChoice') > 0,
+      j: cnt('majJudge') > 0,
+      s: cnt('majShort') > 0,
+    };
+    $$('[data-tabs="major"] .tab').forEach((t) => {
+      if (vis[t.dataset.t] === false) t.classList.add('hidden');
+      else t.classList.remove('hidden');
+    });
     tabSwitch('major', { p: () => renderMajorPoints(easy), c: renderMajorChoice, j: renderMajorJudge, s: renderMajorShort });
   }
   /* ================= 专业课：云端共享题库 + AI 生成任意书目 ================= */
@@ -2739,7 +2847,7 @@
     const books = subj().books;
     if (!books.length) { host.innerHTML = `<div class="empty"><div class="e-cat">📚</div>尚未设置专业课书目。<br>请到「设置 → 我的学科」填写你的专业课书名与编者。</div>`; return; }
     const all = majorAllPoints();
-    const per = isEasy ? store.modeCounts.majPoints.easy : store.modeCounts.majPoints.hard;
+    const per = cnt('majPoints', 3);
     const pick = pickFresh('majPoints', all, Math.min(per, all.length), 'majpts' + todayStr() + (isEasy ? 'e' : 'h'));
     const favPts = majFavItems('points');
     const dailyHTML = `<div class="maj-pts">${pick.map((p) => `<div class="item blur" data-pt="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn ${isMajFav('points', p.id) ? 'on' : ''}" data-fav="points" data-id="${esc(p.id)}" title="收藏">${isMajFav('points', p.id) ? '★' : '☆'}</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>`;
@@ -2766,7 +2874,8 @@
     const host = $('#majC');
     const books = subj().books;
     if (!books.length) { host.innerHTML = `<div class="empty"><div class="e-cat">📚</div>请先在「设置 → 我的学科」填写专业课书目。</div>`; return; }
-    if (store.mode !== 'hard') { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前为轻松版，不布置选择题。<br>切换到高强度版即可练习。</div>`; return; }
+    const nChoice = cnt('majChoice');
+    if (nChoice <= 0) { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前模式未布置选择题。<br>可在「设置 → 每日题量」把「专业课选择题」设为 1 以上。</div>`; return; }
     const favN = (store.majorFavs.choice || []).length;
     const wrongN = (store.majorWrong || []).filter((x) => x.type !== 'judge').length;
     const chips = `<div class="mview-row">
@@ -2802,9 +2911,9 @@
       return;
     }
     const all = majorAllChoice();
-    const n = store.modeCounts.majChoice.hard;
+    const n = nChoice;
     const qs = pickFresh('majChoice', all, Math.min(n, all.length), 'majc' + todayStr());
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道选择题（来自 ${books.length} 本书）· 点选项对答案，点 ⭐ 收藏</div>` + qs.map((q, i) => `
+    host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道选择题（来自 ${books.length} 本书）· 点选项对答案，点 ⭐ 收藏</div>` + qs.map((q, i) => `
       <div class="item" data-ci="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('choice', q.id) ? 'on' : ''}" data-fav="choice" data-id="${esc(q.id)}" title="收藏">${isMajFav('choice', q.id) ? '★' : '☆'}</button></div>
         <div class="it-body">${esc(q.q)}</div>
@@ -2837,7 +2946,8 @@
     const host = $('#majJ');
     const books = subj().books;
     if (!books.length) { host.innerHTML = `<div class="empty"><div class="e-cat">📚</div>请先在「设置 → 我的学科」填写专业课书目。</div>`; return; }
-    if (store.mode !== 'hard') { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前为轻松版，不布置判断题。<br>切换到高强度版即可练习。</div>`; return; }
+    const nJudge = cnt('majJudge');
+    if (nJudge <= 0) { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前模式未布置判断题。<br>可在「设置 → 每日题量」把「专业课判断题」设为 1 以上。</div>`; return; }
     const favN = (store.majorFavs.judge || []).length;
     const wrongAll = store.majorWrong || [];
     const wrongN = wrongAll.filter((x) => x.type === 'judge').length;
@@ -2884,9 +2994,9 @@
       return;
     }
     const all = majorAllJudge();
-    const n = (store.modeCounts.majJudge || { hard: 5 }).hard;
+    const n = nJudge;
     const qs = pickFresh('majJudge', all, Math.min(n, all.length), 'majjudge' + todayStr());
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道判断题（来自 ${books.length} 本书）· 点「正确/错误」作答，点 ⭐ 收藏</div>` + (qs.length ? qs.map((q, i) => `
+    host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道判断题（来自 ${books.length} 本书）· 点「正确/错误」作答，点 ⭐ 收藏</div>` + (qs.length ? qs.map((q, i) => `
       <div class="item" data-ji="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('judge', q.id) ? 'on' : ''}" data-fav="judge" data-id="${esc(q.id)}" title="收藏">${isMajFav('judge', q.id) ? '★' : '☆'}</button></div>
         <div class="it-body">${esc(q.q)}</div>
@@ -2927,7 +3037,8 @@
     const host = $('#majS');
     const books = subj().books;
     if (!books.length) { host.innerHTML = `<div class="empty"><div class="e-cat">📚</div>请先在「设置 → 我的学科」填写专业课书目。</div>`; return; }
-    if (store.mode !== 'hard') { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前为轻松版，不布置简答题。</div>`; return; }
+    const nShort = cnt('majShort');
+    if (nShort <= 0) { host.innerHTML = `<div class="empty"><div class="e-cat">🐱</div>当前模式未布置简答题。<br>可在「设置 → 每日题量」把「专业课简答题」设为 1 以上。</div>`; return; }
     const favN = (store.majorFavs.short || []).length;
     const chips = `<div class="mview-row">
       <button class="mview ${majSView === 'all' ? 'on' : ''}" data-mv="all">全部</button>
@@ -2943,7 +3054,7 @@
       return;
     }
     const all = majorAllShort();
-    const n = store.modeCounts.majShort.hard;
+    const n = nShort;
     const qs = pickFresh('majShort', all, Math.min(n, all.length), 'majs' + todayStr());
     host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道简答题（来自 ${books.length} 本书）· 点 ⭐ 收藏</div>` + qs.map((q, i) => `<div class="acc"><div class="acc-h">Q${i + 1}：${esc(q.q)}<button class="star-btn ${isMajFav('short', q.id) ? 'on' : ''}" data-fav="short" data-id="${esc(q.id)}" title="收藏">${isMajFav('short', q.id) ? '★' : '☆'}</button><span class="ar">▾</span></div><div class="acc-b"><div class="it-zh" style="font-weight:600">${esc(q.a)}</div><div class="it-src" style="margin-top:7px">题源：${esc(q.src || '')}</div></div></div>`).join('') + aiBoxHTML('majShort', all);
     bindAcc(host);
@@ -3916,6 +4027,15 @@
     const tabs = $$(`[data-tabs="${prefix}"] .tab`);
     const hosts = TAB_HOSTS[prefix];
     const cur = (tabs.find((t) => !t.classList.contains('hidden') && t.classList.contains('on')) || tabs.find((t) => !t.classList.contains('hidden')) || tabs[0]);
+    // 关键：把 on 标记与「可见的宿主 div」都对齐到 cur。
+    // 否则被隐藏的 tab（如轻松版下的「选择题」）的旧内容会一直留在屏幕上 ——
+    // 表现就是「切回轻松版后专业课还是旧页面，必须手动点一下知识点/公式才恢复」。
+    if (cur && !cur.classList.contains('hidden')) {
+      tabs.forEach((t) => t.classList.toggle('on', t === cur));
+      Object.keys(hosts).forEach((k) => { const el = $('#' + hosts[k]); if (el) el.classList.add('hidden'); });
+      const curHost = $('#' + hosts[cur.dataset.t]);
+      if (curHost) curHost.classList.remove('hidden');
+    }
     tabs.forEach((t) => {
       if (t.classList.contains('hidden')) return;
       t.onclick = () => {
@@ -3928,7 +4048,7 @@
       };
     });
     // 初始渲染当前 tab
-    if (cur && !cur.classList.contains('hidden')) map[cur.dataset.t]();
+    if (cur && !cur.classList.contains('hidden') && typeof map[cur.dataset.t] === 'function') map[cur.dataset.t]();
   }
 
   function bindAcc(host) {
