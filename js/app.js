@@ -249,13 +249,19 @@
     try {
       br.pullActions().then((r) => {
         const a = JSON.parse((r && r.actions) || '[]');
-        if (Array.isArray(a) && a.length) { applyWidgetActions(a); pushWidgetSnapshot(); }
+        if (Array.isArray(a) && a.length) { applyWidgetActions(a); }
+        // 无论桌面组件是否产生操作，都重新推送快照：
+        // 1) 若消费了 planToggle 等操作，保证 App 已改的状态回写组件；
+        // 2) 若无操作，也刷新组件使其与 App 当前状态完全一致（避免组件回退成空框）。
+        pushWidgetSnapshot();
       }).catch(() => { });
     } catch (e) { }
   }
-  // Capacitor 桥可能晚于脚本就绪，单次推送容易丢 → 多时机重推。
+  // Capacitor 桥可能晚于脚本就绪，单次推送容易丢 → 多时机「拉取组件操作 + 重推」。
+  // 关键修复（Issue C）：冷启动务必先 pullAndApplyWidgetActions 再 push，
+  // 否则 App 会在消费组件操作前就把自己的旧状态推回去，导致组件勾选回退成空框。
   if (typeof setTimeout !== 'undefined') {
-    [300, 1200, 3000, 6000].forEach((ms) => setTimeout(() => pushWidgetSnapshot(), ms));
+    [300, 1200, 3000, 6000].forEach((ms) => setTimeout(() => pullAndApplyWidgetActions(), ms));
     // 8 秒自检：原生平台却一次都没推成功 → 弹一次提示，便于把原因反馈回来。
     setTimeout(() => {
       if (!bridgeSupported() || _pushOk) return;
@@ -263,8 +269,8 @@
     }, 8000);
   }
   if (typeof window !== 'undefined' && window.addEventListener) {
-    window.addEventListener('load', () => pushWidgetSnapshot());
-    window.addEventListener('pageshow', () => pushWidgetSnapshot());
+    window.addEventListener('load', () => pullAndApplyWidgetActions());
+    window.addEventListener('pageshow', () => pullAndApplyWidgetActions());
   }
 
   // 无副作用的确定性选择（不碰 store.aiShown，避免影响 App 自身的每日选题）
@@ -498,8 +504,8 @@
   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
     try { window.Capacitor.Plugins.App.addListener('appStateChange', (st) => { if (st && st.isActive) pullAndApplyWidgetActions(); }); } catch (e) {}
   }
-  // 启动后稍等片刻，确保数据已渲染再推一次快照给小组件
-  if (typeof setTimeout !== 'undefined') setTimeout(() => pushWidgetSnapshot(), 2000);
+  // 启动后稍等片刻，确保数据已渲染再「拉取组件操作 + 推一次快照」给小组件
+  if (typeof setTimeout !== 'undefined') setTimeout(() => pullAndApplyWidgetActions(), 2000);
 
   // 当日学习数据结构
   function day(d) {
