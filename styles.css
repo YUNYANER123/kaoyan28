@@ -867,3 +867,19 @@ textarea{width:100%;border-radius:13px;background:rgba(46,144,232,.06);padding:1
 .jopts .opt{flex:1}
 .maj-add-row{margin-bottom:9px}
 .maj-pts{display:flex;flex-direction:column;gap:9px}
+
+/* ===== v21 适配：隐藏占位滚动条 + 窄屏防溢出 =====
+   部分 OEM 系统 WebView（如 VIVO）会为 overflow:auto 的滚动容器预留「占位滚动条」宽度
+   （约 20~25px），使 .scroll 内容比顶栏窄一截、右侧留白（首页/计划观感偏窄）。
+   移动端不需要可见滚动条，隐藏后内容即可占满整宽；多数机型是 overlay 滚动条（不占位），
+   隐藏后观感不变。 */
+.scroll,.sidebar{scrollbar-width:none;-ms-overflow-style:none;scrollbar-gutter:auto}
+.scroll::-webkit-scrollbar,.sidebar::-webkit-scrollbar{width:0;height:0;display:none}
+/* 内容区禁止横向拖动，避免整页左右晃动 */
+.scroll{overflow-x:hidden}
+/* 弹性行内的输入框 / 滑条允许收缩或换行，避免内容被顶出屏幕右侧（英语页搜索栏/滑条/翻页条） */
+.word-search{flex-wrap:wrap}
+.word-search .ws-input{flex:1 1 140px;min-width:0}
+.wslider{flex-wrap:wrap}
+.wslider-range{flex:1 1 120px;min-width:0}
+.word-nav button{min-width:0}
