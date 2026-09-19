@@ -373,7 +373,9 @@
       todayCnt: (day(t).en.wordCount) || 0,
       totalLearned: (ws.learned || []).length,
       goal: store.goals.word || 0,
-      pool: wpool
+      pool: wpool,
+      // 背单词桌面组件标星按钮要用：当前哪些单词被标星（与 App 内 store.words.favs 同源，存的是单词在 EN_WORDS 里的下标）
+      favs: (ws.favs || []).slice()
     };
 
     // 4) 随机拼写池
@@ -462,6 +464,14 @@
           if (a.idx >= 0 && !(store.words.learned || []).includes(a.idx)) {
             store.words.learned.push(a.idx);
             const d = day(t); d.en.wordCount = (d.en.wordCount || 0) + 1;
+          }
+        } else if (a.t === 'wordFav') {
+          // 背单词桌面组件的标星按钮：与 App 内单词卡标星逻辑一致（含一轮强化池同步）
+          if (typeof a.idx === 'number' && a.idx >= 0) {
+            const favs = (store.words.favs || (store.words.favs = []));
+            const fi = favs.indexOf(a.idx);
+            if (fi >= 0) { favs.splice(fi, 1); removeFromRound(0, a.idx); }
+            else { favs.push(a.idx); if (!store.words.rounds.flat().includes(a.idx)) store.words.rounds[0].push(a.idx); }
           }
         } else if (a.t === 'mathOk') {
           if (a.q) bumpMath(a.q);
