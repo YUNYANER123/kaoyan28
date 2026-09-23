@@ -466,12 +466,14 @@
             const d = day(t); d.en.wordCount = (d.en.wordCount || 0) + 1;
           }
         } else if (a.t === 'wordFav') {
-          // 背单词桌面组件的标星按钮：与 App 内单词卡标星逻辑一致（含一轮强化池同步）
+          // 背单词桌面组件的标星按钮：与 App 内单词卡标星逻辑一致（含一轮强化池同步）。
+          // 优先按明确的 add 标志「设置/取消」（幂等、避免多端竞态）；缺省时按当前态翻转（兼容旧版 widget）。
           if (typeof a.idx === 'number' && a.idx >= 0) {
             const favs = (store.words.favs || (store.words.favs = []));
             const fi = favs.indexOf(a.idx);
-            if (fi >= 0) { favs.splice(fi, 1); removeFromRound(0, a.idx); }
-            else { favs.push(a.idx); if (!store.words.rounds.flat().includes(a.idx)) store.words.rounds[0].push(a.idx); }
+            const want = (a.add === true) ? true : (a.add === false ? false : (fi < 0));
+            if (want && fi < 0) { favs.push(a.idx); if (!store.words.rounds.flat().includes(a.idx)) store.words.rounds[0].push(a.idx); }
+            else if (!want && fi >= 0) { favs.splice(fi, 1); removeFromRound(0, a.idx); }
           }
         } else if (a.t === 'mathOk') {
           if (a.q) bumpMath(a.q);
