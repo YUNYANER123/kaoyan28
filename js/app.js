@@ -465,6 +465,12 @@
             store.words.learned.push(a.idx);
             const d = day(t); d.en.wordCount = (d.en.wordCount || 0) + 1;
           }
+        } else if (a.t === 'wordNav') {
+          // 背单词桌面组件把组件的导航（绝对单词下标）同步回 App：App 当前词收敛到组件浏览到的词，
+          // 实现「在组件上背到哪，App 就停在哪」的双向同步。
+          if (typeof a.idx === 'number' && a.idx >= 0 && typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
+            store.words.idx = ((a.idx % EN_WORDS.length) + EN_WORDS.length) % EN_WORDS.length;
+          }
         } else if (a.t === 'wordFav') {
           // 背单词桌面组件的标星按钮：与 App 内单词卡标星逻辑一致（含一轮强化池同步）。
           // 优先按明确的 add 标志「设置/取消」（幂等、避免多端竞态）；缺省时按当前态翻转（兼容旧版 widget）。
@@ -512,6 +518,13 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') pullAndApplyWidgetActions();
     });
+  }
+  // 周期性「拉取组件操作 + 重推快照」：兜底保证两端同步不卡死。
+  // 背单词组件点击「下一个/标记已背」后入队的操作会被及时消费回写 App；
+  // 同时每轮重推让组件持续与 App 当前状态一致（导入数据后、App 内翻词后都能在数秒内刷新），
+  // 避免「组件空白 / 进度不同步」。仅在原生（Capacitor）环境生效，网页端 pullAndApplyWidgetActions 会直接 return。
+  if (typeof setInterval !== 'undefined') {
+    setInterval(() => { pullAndApplyWidgetActions(); }, 10000);
   }
   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
     try { window.Capacitor.Plugins.App.addListener('appStateChange', (st) => { if (st && st.isActive) pullAndApplyWidgetActions(); }); } catch (e) {}
@@ -3984,7 +3997,7 @@
   function importData(e) {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); store = migrate(d); save(); toast('导入成功，已恢复数据'); buildSidebar(); goPage(curPage); } catch (err) { toast('文件格式错误'); } };
+    r.onload = () => { try { const d = JSON.parse(r.result); store = migrate(d); save(); pushWidgetSnapshot(); toast('导入成功，已恢复数据'); buildSidebar(); goPage(curPage); } catch (err) { toast('文件格式错误'); } };
     r.readAsText(f);
     try { e.target.value = ''; } catch (err) { }
   }
@@ -4023,7 +4036,7 @@
       try { d = JSON.parse(txt); } catch (e) { toast('内容格式不正确，请确认粘贴完整'); return; }
       if (!confirm('确定用这份备份覆盖当前数据？')) return;
       try {
-        store = migrate(d); save(); wrap.remove();
+        store = migrate(d); save(); pushWidgetSnapshot(); wrap.remove();
         toast('恢复成功'); buildSidebar(); goPage('home');
       } catch (e) { toast('恢复失败：' + ((e && e.message) || '')); }
     };
