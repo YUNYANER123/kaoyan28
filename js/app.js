@@ -451,8 +451,18 @@
     actions.forEach((a) => {
       try {
         if (a.t === 'planToggle') {
-          if (a.id && a.id.indexOf('@') >= 0) { store.planDone[a.id] = !store.planDone[a.id]; }
-          else { const arr = store.plan[t] || []; const x = arr.find((y) => y.id === a.id); if (x) x.done = !x.done; }
+          if (a.id) {
+            // 桌面组件回传的 id 可能是「tplId@date」（模版实例）或单天手填任务 id。
+            const at = (a.id.indexOf('@') >= 0) ? a.id.split('@')[0] : a.id;
+            const tpl = (store.planTpl || []).find((t) => t.id === at);
+            if (tpl) {
+              const key = (tpl.dateEnd) ? at : a.id;   // 跨天模版整段共用标记
+              store.planDone[key] = !store.planDone[key];
+            } else {
+              // 单天手填任务（存于 store.plan[t] 数组，不用 planDone）
+              const arr = store.plan[t] || []; const x = arr.find((y) => y.id === a.id); if (x) x.done = !x.done;
+            }
+          }
         } else if (a.t === 'lifeMeal') {
           const ld2 = lifeDay(t);
           if (a.key === 'exercise') ld2.exercise = !!a.val; else ld2.meals[a.key] = !!a.val;
@@ -875,8 +885,11 @@
       if (!matchRepeat(tpl, ds)) return;
       const key = tpl.id + '@' + ds;
       if (store.planHide && store.planHide[key]) return;
+      // 跨天计划（有 dateEnd）：整段共用一个完成标记（以 tpl.id 为键），在任一 anchor 天完成即视为整段完成，
+      // 所跨的每一天都显示「已完成」——满足「只需完成一次，所有天都显示完成」。单天模版仍按当天标记。
+      const spanKey = tpl.dateEnd ? tpl.id : key;
       out.push({
-        id: key, text: tpl.text, pri: tpl.pri, cat: tpl.cat, done: !!(store.planDone && store.planDone[key]),
+        id: key, text: tpl.text, pri: tpl.pri, cat: tpl.cat, done: !!(store.planDone && store.planDone[spanKey]),
         carry: false, tplId: tpl.id, date: ds, note: tpl.note || '',
         timeMode: tpl.timeMode || 'none', time: tpl.time || '', timeEnd: tpl.timeEnd || '', repeat: tpl.repeat || null
       });
@@ -1015,15 +1028,18 @@
     });
   }
   function toggleDone(item) {
-    if (item.tplId) { store.planDone[item.id] = !item.done; }
-    else { const arr = store.plan[item.date] || []; const t = arr.find((x) => x.id === item.id); if (t) t.done = !t.done; }
+    if (item.tplId) {
+      const tpl = (store.planTpl || []).find((t) => t.id === item.tplId);
+      const key = (tpl && tpl.dateEnd) ? item.tplId : item.id;   // 跨天模版整段共用标记
+      store.planDone[key] = !store.planDone[key];
+    } else { const arr = store.plan[item.date] || []; const t = arr.find((x) => x.id === item.id); if (t) t.done = !t.done; }
     save(); renderPlan();
   }
   function delTask(item) {
     if (item.tplId) {
       if (!confirm('删除该定时任务（含所有重复）？')) return;
       store.planTpl = store.planTpl.filter((t) => t.id !== item.tplId);
-      Object.keys(store.planDone).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planDone[k]; });
+      Object.keys(store.planDone).forEach((k) => { if (k === item.tplId || k.indexOf(item.tplId + '@') === 0) delete store.planDone[k]; });
     } else {
       store.plan[item.date] = (store.plan[item.date] || []).filter((x) => x.id !== item.id);
     }
@@ -1812,7 +1828,7 @@
       pool = pool.concat(EN_READINGS_2.map((r, i) => ({ r, kind: '2', key: '2:' + i, __k: 'enRead#2#' + i })));
     }
     pool = pool.concat((store.aiBank.enRead || []).map((x) => ({ r: x, kind: 'ai', key: 'ai:' + x.__k, __k: x.__k })));
-    const picked = pickFresh('enRead', pool, mc, 'enread' + t + store.mode + s.en);
+    const picked = pickFresh('enRead', pool, mc, 'enread' + t + store.mode + s.en, false);
     const readCount = day(t).en.readCount || 0;
     const label = s.en === '2' ? '英语二 + 英语一阅读真题' : '英语一阅读真题';
     host.innerHTML = `
@@ -1828,6 +1844,7 @@
     wireAiGen();
     picked.forEach((p, i) => {
       host.querySelector(`[data-ri="${i}"]`).onclick = () => {
+        markShown('enRead', [keyOf(p)]);
         const ri = p.key;
         const dEn = day(t).en;
         dEn.readDone = dEn.readDone || [];
@@ -1880,14 +1897,14 @@
     const t = todayStr();
     const s = subj();
     const matPool = withAI('enTrans', (typeof EN_TRANSLATIONS !== 'undefined' ? EN_TRANSLATIONS : []));
-    const mats = pickFresh('enTrans', matPool, cnt('enTrans', 3), 'entrans' + t + store.mode);
+    const mats = pickFresh('enTrans', matPool, cnt('enTrans', 3), 'entrans' + t + store.mode, false);
     // 翻译真题：英一始终有；英语二额外并入英二翻译真题
     let examPool = (typeof EN_TRANSLATE_EXAM !== 'undefined' ? EN_TRANSLATE_EXAM : []).map((m, i) => ({ m, kind: '1', __k: 'enTrExam#1#' + i }));
     if (s.en === '2' && typeof EN_TRANSLATE_EXAM_2 !== 'undefined') {
       examPool = examPool.concat(EN_TRANSLATE_EXAM_2.map((m, i) => ({ m, kind: '2', __k: 'enTrExam#2#' + i })));
     }
     examPool = examPool.concat((store.aiBank.enTrExam || []).map((x) => ({ m: x, kind: 'ai', __k: x.__k })));
-    const exams = pickFresh('enTrExam', examPool, cnt('enTranslateExam', 3), 'entransE' + t + store.mode + s.en);
+    const exams = pickFresh('enTrExam', examPool, cnt('enTranslateExam', 3), 'entransE' + t + store.mode + s.en, false);
     host.innerHTML = `
       <div class="hint">每日 ${mats.length} 篇网络精翻材料 + ${exams.length} 句翻译真题${s.en === '2' ? '（含英语一、英语二）' : '（英语一）'} · 点开查看全文 / 标准答案</div>
       <div class="sec-title">📚 每日精翻材料（${mats.length} 篇）</div>
@@ -1899,6 +1916,7 @@
     wireAiGen();
     mats.forEach((m, i) => {
       host.querySelector(`[data-ti="${i}"]`).onclick = () => {
+        markShown('enTrans', [keyOf(m)]);
         openModal('✍ ' + m.title, `<div class="mb-src">${esc(m.src)}</div>
           <div class="mb-sec">原文</div><div class="mb-pass">${esc(m.text).replace(/\n/g, '<br>')}</div>
           <div class="mb-sec">参考译文</div><div class="mb-pass zh">${esc(m.zh).replace(/\n/g, '<br>')}</div>`);
@@ -1907,6 +1925,7 @@
     exams.forEach((p, i) => {
       const m = p.m;
       host.querySelector(`[data-ei="${i}"]`).onclick = () => {
+        markShown('enTrExam', [keyOf(p)]);
         openModal('📝 ' + m.y + (p.kind === '2' ? ' 英语二翻译真题' : ' 英语一翻译真题'), `
           <div class="mb-sec">原文</div><div class="mb-pass en">${esc(m.text).replace(/\n/g, '<br>')}</div>
           <div class="mb-sec">标准答案</div><div class="mb-pass zh">${esc(m.zh).replace(/\n/g, '<br>')}</div>`);
@@ -1948,13 +1967,14 @@
       : (typeof ZHENTI_PIC !== 'undefined' ? ZHENTI_PIC : []);
     const fallback = (typeof EN_ZHENTI !== 'undefined' ? EN_ZHENTI : []);
     const pool = withAI('enZhenti', bank.length ? bank : fallback);
-    const list = pickFresh('enZhenti', pool, zhenN, 'enzhen' + t + store.mode + s.en);
+    const list = pickFresh('enZhenti', pool, zhenN, 'enzhen' + t + store.mode + s.en, false);
     const kindTxt = s.en === '2' ? '图表作文（英语二）' : '图画作文（英语一）';
     host.innerHTML = `<div class="hint">真题库 · ${kindTxt} · 每日 ${list.length} 篇 · 点开查看题目与范文</div>
       <div class="rl-list">${list.map((e, i) => `<div class="item rl-item" data-zi="${i}"><div class="it-h"><span class="badge p">${esc(e.y)}</span></div><div class="it-body">${esc(String(e.t).split('\n')[0])}</div><div class="it-key">点击查看题目与范文 →</div></div>`).join('')}</div>
       ${aiBoxHTML('enZhenti', pool)}`;
     list.forEach((e, i) => {
       host.querySelector(`[data-zi="${i}"]`).onclick = () => {
+        markShown('enZhenti', [keyOf(e)]);
         openModal('📝 ' + e.y + ' 真题 · ' + kindTxt, `<div class="mb-sec">题目</div><div class="mb-pass">${esc(e.t).replace(/\n/g, '<br>')}</div><div class="mb-sec">范文</div><div class="mb-pass en">${esc(e.essay).replace(/\n/g, '<br>')}</div>`);
       };
     });
@@ -2128,25 +2148,46 @@
   function tagPool(k, arr) { (arr || []).forEach((x, i) => { if (x && !x.__k) x.__k = k + '#' + i; }); return arr || []; }
   // 内置池 + AI 池
   function withAI(key, builtinArr) { return tagPool(key, builtinArr).concat(store.aiBank[key] || []); }
+  // 标记某条目「今日已完成 / 已看」（点开 / 作答 / 清除时调用）。
+  // 与 pickFresh 的 seen 同源：被标记后该条目不再被优先重展示，直到当天题库被刷完才会进入新一轮。
+  function markShown(key, ids) {
+    if (!ids || !ids.length) return;
+    const t = todayStr();
+    let rec = store.aiShown[key];
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec) || rec.d !== t) rec = { d: t, ids: [], seen: [] };
+    if (!Array.isArray(rec.seen)) rec.seen = [];
+    ids.forEach((id) => { if (id && rec.seen.indexOf(id) < 0) rec.seen.push(id); });
+    store.aiShown[key] = rec;
+    save();
+  }
   // 按日期抽取，并跳过「本轮已出现过」的条目；全部出现过才重置一轮。
   // 同一天多次渲染（例如点开题目会重绘）返回同一批，保证列表不跳变。
-  function pickFresh(key, pool, n, seed) {
+  // consumeOnShow=true（默认）：展示即视为已消费（旧行为，用于「作文句型 / 知识点公式」等直接可看的内容）；
+  // consumeOnShow=false：条目「仅展示」不消费，必须用户点开 / 作答 / 清除（调用 markShown）后才算完成，
+  //   未完成项会一直被优先重展示，直到被点过——满足「没做就重新回来，直到被点击」。
+  function pickFresh(key, pool, n, seed, consumeOnShow) {
     const t = todayStr();
     let rec = store.aiShown[key];
     if (!rec || typeof rec !== 'object' || Array.isArray(rec)) rec = { d: '', ids: [], seen: [] };
     if (!Array.isArray(rec.ids)) rec.ids = [];
     if (!Array.isArray(rec.seen)) rec.seen = [];
     if (rec.d !== t) { rec.d = t; rec.ids = []; }        // 换天 → 重新抽一批
-    let picked = rec.ids.map((id) => pool.find((x) => keyOf(x) === id)).filter(Boolean);
+    // 优先展示「今日选中但尚未完成」的条目（未完成才会被反复重新展示）
+    let picked = rec.ids.map((id) => pool.find((x) => keyOf(x) === id)).filter(Boolean)
+                        .filter((x) => rec.seen.indexOf(keyOf(x)) < 0);
     if (picked.length > n) picked = picked.slice(0, n);
     if (picked.length < n && pool.length) {
-      const have = {}; picked.forEach((x) => { have[keyOf(x)] = 1; });
+      const have = {}; rec.ids.forEach((id) => { have[id] = 1; });
       let un = pool.filter((x) => !have[keyOf(x)] && rec.seen.indexOf(keyOf(x)) < 0);
-      if (un.length < n - picked.length) { rec.seen = []; un = pool.filter((x) => !have[keyOf(x)]); }
+      // 仅在「展示即消费」的板块，题库被一轮刷完时才重置 seen（开始新一轮）；
+      // 交互型板块（consumeOnShow=false）绝不重置 seen，避免已完成的条目被重新抖出来。
+      if (consumeOnShow && un.length < n - picked.length) { rec.seen = []; un = pool.filter((x) => !have[keyOf(x)]); }
       picked = picked.concat(dailyPick(un, Math.min(n - picked.length, un.length), seed + '|' + picked.length));
     }
-    rec.ids = picked.map(keyOf);
-    picked.forEach((x) => { const k2 = keyOf(x); if (k2 && rec.seen.indexOf(k2) < 0) rec.seen.push(k2); });
+    // 维护今日选择集 rec.ids；只有「展示即消费」的板块才在此写入 seen
+    const newIds = picked.map(keyOf);
+    rec.ids = rec.ids.concat(newIds).filter((id, i, a) => a.indexOf(id) === i);
+    if (consumeOnShow) { newIds.forEach((id) => { if (id && rec.seen.indexOf(id) < 0) rec.seen.push(id); }); }
     store.aiShown[key] = rec;
     save();
     aiMaybeAuto(key, pool, n);   // 库存快见底 → 后台自动补货
@@ -2355,7 +2396,7 @@
     ['choice', 'fill', 'sol'].forEach((tk) => {
       const arr = banks[tk] || [];
       if (!arr.length || !quota[tk]) return;
-      pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, Math.min(quota[tk], arr.length), seed + tk)
+      pickFresh('math' + MATH_SEC_CODE[sec] + tk, arr, Math.min(quota[tk], arr.length), seed + tk, false)
         .forEach((x) => out.push({ type: tk, q: x }));
     });
     return out;
@@ -2454,6 +2495,7 @@
         const correct = mathCorrectLetter(q.a);
         el.querySelectorAll('.math-opt').forEach((ob) => {
           ob.onclick = () => {
+            markShown('math' + MATH_SEC_CODE[sec] + 'choice', [keyOf(q)]);
             const L = ob.dataset.opt;
             el.querySelectorAll('.math-opt').forEach((e) => e.classList.remove('corr', 'wrong'));
             if (L === correct) ob.classList.add('corr');
@@ -2463,10 +2505,10 @@
         });
       } else if (type === 'fill') {
         const submitBtn = el.querySelector('[data-a="submit"]');
-        if (submitBtn) submitBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); };
+        if (submitBtn) submitBtn.onclick = () => { markShown('math' + MATH_SEC_CODE[sec] + 'fill', [keyOf(q)]); if (ansBox) ansBox.classList.remove('hidden'); };
       } else {
         const showBtn = el.querySelector('[data-a="show"]');
-        if (showBtn) showBtn.onclick = () => { if (ansBox) ansBox.classList.remove('hidden'); showBtn.classList.add('hidden'); };
+        if (showBtn) showBtn.onclick = () => { markShown('math' + MATH_SEC_CODE[sec] + 'sol', [keyOf(q)]); if (ansBox) ansBox.classList.remove('hidden'); showBtn.classList.add('hidden'); };
       }
       const okBtn = el.querySelector('[data-a="ok"]');
       if (okBtn) okBtn.onclick = () => { bumpMath(); toast('棒！已记录'); };
@@ -2489,14 +2531,14 @@
     const aiF = store.aiBank.mathF || [];
     subjs.forEach((k) => { map[k] = withAI('mathF_' + k, map[k]).concat(aiF.filter((x) => x.subj === k)); });
     const picks = {};
-    subjs.forEach((k) => { picks[k] = pickFresh('mathF_' + k, map[k], Math.min(per, map[k].length), seed + k); });
-    const itemHTML = (o) => `<li class="blur"><span class="fi-ch">${esc(o.ch)}</span><span class="fi-t">${esc(o.it)}</span></li>`;
-    const subjHTML = (s) => { if (!map[s].length) return ''; return `<div class="mf-subj"><div class="mf-sh">📐 ${s} · 今日 ${picks[s].length} 条</div><ul class="mf-list">${picks[s].map(itemHTML).join('')}</ul></div>`; };
+    subjs.forEach((k) => { picks[k] = pickFresh('mathF_' + k, map[k], Math.min(per, map[k].length), seed + k, false); });
+    const itemHTML = (o, s) => `<li class="blur" data-sk="${s}" data-fk="${esc(keyOf(o))}"><span class="fi-ch">${esc(o.ch)}</span><span class="fi-t">${esc(o.it)}</span></li>`;
+    const subjHTML = (s) => { if (!map[s].length) return ''; return `<div class="mf-subj"><div class="mf-sh">📐 ${s} · 今日 ${picks[s].length} 条</div><ul class="mf-list">${picks[s].map((o) => itemHTML(o, s)).join('')}</ul></div>`; };
     host.innerHTML =
       `<div class="hint">公式回忆每日更新（每科 ${per} 条${subj().math === '2' ? ' · 数学二无概率论、高数不含数一专属内容' : ''}）· 点击条目可切换「遮盖 / 显示」对照记忆</div>` +
       subjs.map(subjHTML).join('') +
       aiBoxHTML('mathF', subjs.reduce((a, k) => a.concat(map[k]), []));
-    $$('#mathF .mf-list li').forEach((li) => { li.onclick = () => li.classList.toggle('blur'); });
+    $$('#mathF .mf-list li').forEach((li) => { li.onclick = () => { li.classList.toggle('blur'); const sk = li.dataset.sk, fk = li.dataset.fk; if (sk && fk) markShown('mathF_' + sk, [fk]); }; });
     wireAiGen();
   }
   function renderMathWrong() {
@@ -2943,7 +2985,7 @@
     }
     const all = majorAllChoice();
     const n = nChoice;
-    const qs = pickFresh('majChoice', all, Math.min(n, all.length), 'majc' + todayStr());
+    const qs = pickFresh('majChoice', all, Math.min(n, all.length), 'majc' + todayStr(), false);
     host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道选择题（来自 ${books.length} 本书）· 点选项对答案，点 ⭐ 收藏</div>` + qs.map((q, i) => `
       <div class="item" data-ci="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('choice', q.id) ? 'on' : ''}" data-fav="choice" data-id="${esc(q.id)}" title="收藏">${isMajFav('choice', q.id) ? '★' : '☆'}</button></div>
@@ -2959,6 +3001,7 @@
     $$('#majC .item[data-ci]').forEach((el) => {
       const i = +el.dataset.ci; const q = qs[i]; if (!q) return;
       $$('.opt', el).forEach((ob) => ob.onclick = () => {
+        markShown('majChoice', [keyOf(q)]);
         const j = +ob.dataset.oj;
         $$('.opt', el).forEach((x) => x.classList.remove('right', 'wrong'));
         ob.classList.add(j === q.k ? 'right' : 'wrong');
@@ -3026,7 +3069,7 @@
     }
     const all = majorAllJudge();
     const n = nJudge;
-    const qs = pickFresh('majJudge', all, Math.min(n, all.length), 'majjudge' + todayStr());
+    const qs = pickFresh('majJudge', all, Math.min(n, all.length), 'majjudge' + todayStr(), false);
     host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道判断题（来自 ${books.length} 本书）· 点「正确/错误」作答，点 ⭐ 收藏</div>` + (qs.length ? qs.map((q, i) => `
       <div class="item" data-ji="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('judge', q.id) ? 'on' : ''}" data-fav="judge" data-id="${esc(q.id)}" title="收藏">${isMajFav('judge', q.id) ? '★' : '☆'}</button></div>
@@ -3045,6 +3088,7 @@
     $$('#majJ .item[data-ji]').forEach((el) => {
       const i = +el.dataset.ji; const q = qs[i]; if (!q) return;
       $$('.opt', el).forEach((ob) => ob.onclick = () => {
+        markShown('majJudge', [keyOf(q)]);
         const picked = ob.dataset.oj === '1';
         const ok = picked === q.a;
         $$('.opt', el).forEach((x) => x.classList.remove('right', 'wrong'));
@@ -3086,9 +3130,10 @@
     }
     const all = majorAllShort();
     const n = nShort;
-    const qs = pickFresh('majShort', all, Math.min(n, all.length), 'majs' + todayStr());
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道简答题（来自 ${books.length} 本书）· 点 ⭐ 收藏</div>` + qs.map((q, i) => `<div class="acc"><div class="acc-h">Q${i + 1}：${esc(q.q)}<button class="star-btn ${isMajFav('short', q.id) ? 'on' : ''}" data-fav="short" data-id="${esc(q.id)}" title="收藏">${isMajFav('short', q.id) ? '★' : '☆'}</button><span class="ar">▾</span></div><div class="acc-b"><div class="it-zh" style="font-weight:600">${esc(q.a)}</div><div class="it-src" style="margin-top:7px">题源：${esc(q.src || '')}</div></div></div>`).join('') + aiBoxHTML('majShort', all);
+    const qs = pickFresh('majShort', all, Math.min(n, all.length), 'majs' + todayStr(), false);
+    host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道简答题（来自 ${books.length} 本书）· 点 ⭐ 收藏</div>` + qs.map((q, i) => `<div class="acc" data-msk="${esc(keyOf(q))}"><div class="acc-h">Q${i + 1}：${esc(q.q)}<button class="star-btn ${isMajFav('short', q.id) ? 'on' : ''}" data-fav="short" data-id="${esc(q.id)}" title="收藏">${isMajFav('short', q.id) ? '★' : '☆'}</button><span class="ar">▾</span></div><div class="acc-b"><div class="it-zh" style="font-weight:600">${esc(q.a)}</div><div class="it-src" style="margin-top:7px">题源：${esc(q.src || '')}</div></div></div>`).join('') + aiBoxHTML('majShort', all);
     bindAcc(host);
+    $$('#majS .acc').forEach((acc) => { const hh = acc.querySelector('.acc-h'); if (hh) hh.addEventListener('click', () => { const k = acc.dataset.msk; if (k) markShown('majShort', [k]); }); });
     wireChips(); wireFav(); wireMajGen(); wireAiGen();
   }
   function bookSelectHTML() {
