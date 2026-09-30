@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v25';   // v25——英语/数学/专业课全部接入「AI 题库扩充引擎」：①每个模块底部可一键扩充（+N 条），生成结果永久并入本机题库 ②每日抽题改为「刷完一轮才重复」，同一天多次打开不跳变，每天都换新内容 ③库存快见底时后台自动补货（每次最多 2 个模块）④专业课支持把 AI 条目按书名归档。v24——专业课支持任意书目：内置题库 → 云端共享题库 → 免密钥大模型一键生成专属知识点/选择题/判断题/简答题；AI 内容明确标注需核对。v23——①修复换用其他专业课参考书后整块空白的 bug，新增 data-major-lib.js 通用题库 ②专业课新增「判断题」题型 ③专业课副标题改为所有书目缩写并列
+const CACHE = 'kaoyan28-v26';   // v25——英语/数学/专业课全部接入「AI 题库扩充引擎」：①每个模块底部可一键扩充（+N 条），生成结果永久并入本机题库 ②每日抽题改为「刷完一轮才重复」，同一天多次打开不跳变，每天都换新内容 ③库存快见底时后台自动补货（每次最多 2 个模块）④专业课支持把 AI 条目按书名归档。v24——专业课支持任意书目：内置题库 → 云端共享题库 → 免密钥大模型一键生成专属知识点/选择题/判断题/简答题；AI 内容明确标注需核对。v23——①修复换用其他专业课参考书后整块空白的 bug，新增 data-major-lib.js 通用题库 ②专业课新增「判断题」题型 ③专业课副标题改为所有书目缩写并列
 const ASSETS = [
   './',
   './index.html',
@@ -40,16 +40,17 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // 改为「网络优先」：本应用是打包进 APK 的，每次发版 www 里的 js 都会变。
+  // 旧逻辑是缓存优先（return hit || net），装了新版 APK 后 WebView 仍在跑上一次缓存的旧 app.js，
+  // 导致新功能/修复看起来「没生效」（例如设置里不显示版本号、专业课兜底不生效）。
+  // 网络优先可保证始终用最新资源，仅在离线时回退到缓存。
   e.respondWith(
-    caches.match(e.request).then((hit) => {
-      const net = fetch(e.request).then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+    fetch(e.request).then((res) => {
+      if (res && res.status === 200 && res.type === 'basic') {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+      }
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
