@@ -3837,7 +3837,9 @@
         <div class="hint">书名用《》括起，书名与编者间用逗号，多编者用逗号分隔，不同书用分号隔开。只填书名也可（如《书名1》；《书名2》）。题目 / 知识点 / 公式将自动从这些书生成。</div>
       </div>
       <div class="btn-row"><button class="gbtn" id="bookSave">保存学科设置</button></div>
-      <div id="bookPreview"></div>`;
+      <div id="bookPreview"></div>
+      <div id="verLine" class="hint" style="margin-top:10px"></div>`;
+    showVersionLine();
     // 回填已保存书目
     $('#bookText').value = s.books.map((b) => `《${b.name}》${b.authors.length ? '，' + b.authors.join('，') : ''}`).join('；');
     $$('input[name="subjEn"]').forEach((r) => r.onchange = () => { store.settings.en = r.value; save(); afterSubjChange('英语'); });
@@ -3849,6 +3851,22 @@
       $('#bookPreview').innerHTML = `<div class="hint ok">已保存 ${books.length} 本书：${books.map((b) => '《' + esc(b.name) + '》').join('、')}</div>`;
       afterSubjChange('专业课');
     };
+  }
+  // 在「设置」里显示当前版本号：原生端读 Capacitor App 插件的 version/build，网页端显示「网页版」。
+  // 便于确认手机上装的到底是哪一个构建（每次构建的 versionName 都不同，如 1.20 / 1.21）。
+  function showVersionLine() {
+    const el = document.getElementById('verLine');
+    if (!el) return;
+    const put = (v) => { el.textContent = '当前版本：' + v; };
+    try {
+      const C = window.Capacitor;
+      if (C && C.Plugins && C.Plugins.App && typeof C.Plugins.App.getInfo === 'function') {
+        C.Plugins.App.getInfo().then((i) => put((i && (i.version || i.build)) || '未知')).catch(() => put('未知'));
+        return;
+      }
+      if (C && typeof C.Plugins !== 'undefined') { put('原生版'); return; }
+    } catch (e) {}
+    put('网页版');
   }
   function afterSubjChange(tag) {
     toast((tag ? tag + '设置' : '学科') + '已更新');
