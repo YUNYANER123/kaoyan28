@@ -335,6 +335,23 @@
     return { stem: stem, opts: opts };
   }
 
+  // 桌面组件专用：专业课取数（带兜底）。
+  // App 内的 majorAllXxx() 只认「当前学科在设置里配置的教材」；若设置里没配教材、
+  // 或教材名与导入数据对不上，取数结果就是空 → 专业课组件恒空。
+  // 这里先按配置教材取；取不到时退化为「取所有已有数据的教材」，保证组件有内容。
+  function widgetMajorAll(kind) {
+    const out = [];
+    const md = store.majorData || {};
+    const collect = (name) => {
+      const m = md[name];
+      if (!m || !Array.isArray(m[kind])) return;
+      m[kind].forEach((x) => out.push(Object.assign({ book: name }, x)));
+    };
+    (subj().books || []).forEach((b) => collect(b.name));
+    if (!out.length) Object.keys(md).forEach(collect);
+    return out;
+  }
+
   function buildWidgetSnapshot() {
     const t = todayStr();
     const hard = store.mode === 'hard';
@@ -417,8 +434,8 @@
     // 6) 专业课知识点（用 cnt() 读题量：旧存档缺键时回落默认值，避免组件永远空）
     let majPoints = { count: 0, items: [] };
     try {
-      const all = majorAllPoints();
-      const per = cnt('majPoints', 3);
+      const all = widgetMajorAll('points');
+      const per = cnt('majPoints', 3) || 3;
       const items = pickStable(all, per, 'majpts' + t + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
       majPoints = { count: items.length, items: items };
     } catch (e) {}
@@ -426,10 +443,12 @@
     // 7) 专业课题目
     let majQuiz = { choiceCount: 0, judgeCount: 0, questions: [] };
     try {
-      const cAll = majorAllChoice();
-      const jAll = majorAllJudge();
-      const cn = cnt('majChoice');
-      const jn = cnt('majJudge');
+      const cAll = widgetMajorAll('choice');
+      const jAll = widgetMajorAll('judge');
+      // 默认配置里 majChoice / majJudge 在「轻松版(easy)」下是 0，
+      // 直接按配置取会让组件一条题都没有 → 组件端兜底给 3 道选择 / 2 道判断。
+      const cn = cnt('majChoice') || 3;
+      const jn = cnt('majJudge') || 2;
       const cItems = pickStable(cAll, cn, 'majc' + t).map((q) => ({
         id: q.id, type: 'choice', book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book
       }));
