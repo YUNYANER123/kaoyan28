@@ -3857,17 +3857,105 @@
   function showVersionLine() {
     const el = document.getElementById('verLine');
     if (!el) return;
-    const put = (v) => { el.textContent = '当前版本：' + v; };
+    let v = '网页版';
     try {
       const C = window.Capacitor;
       if (C && C.Plugins && C.Plugins.App && typeof C.Plugins.App.getInfo === 'function') {
-        C.Plugins.App.getInfo().then((i) => put((i && (i.version || i.build)) || '未知')).catch(() => put('未知'));
-        return;
-      }
-      if (C && typeof C.Plugins !== 'undefined') { put('原生版'); return; }
+        C.Plugins.App.getInfo().then((i) => { v = (i && (i.version || i.build)) || '未知'; paint(); })
+          .catch(() => { v = '未知'; paint(); });
+      } else if (C) { v = '原生版'; }
     } catch (e) {}
-    put('网页版');
+    paint();
+    // 诊断信息：把「版本 / 单词库 / 专业课数据 / 组件同步状态」直接显示出来，便于远程定位
+    function paint() {
+      let en = 0;
+      try { en = (typeof EN_WORDS !== 'undefined' && EN_WORDS) ? EN_WORDS.length : 0; } catch (e) {}
+      let books = 0, pts = 0, ch = 0, jd = 0, mdKeys = 0;
+      try {
+        books = (subj().books || []).length;
+        const md = store.majorData || {};
+        mdKeys = Object.keys(md).length;
+        Object.keys(md).forEach((k) => {
+          const m = md[k] || {};
+          pts += (m.points || []).length;
+          ch += (m.choice || []).length;
+          jd += (m.judge || []).length;
+        });
+      } catch (e) {}
+      let sync = '未知';
+      try {
+        if (typeof widgetBridgeStatus === 'function') {
+          const st = widgetBridgeStatus();
+          sync = '原生=' + st.supported + ' 就绪=' + st.ready + ' 已推=' + st.pushed + (st.error ? (' 错误=' + st.error) : '');
+        }
+      } catch (e) {}
+      el.innerHTML = '版本：' + v + '<br>单词库：' + en + ' 条 · 书目：' + books + ' 本（数据教材 ' + mdKeys + '）<br>'
+        + '知识点：' + pts + ' · 选择题：' + ch + ' · 判断题：' + jd + '<br>组件同步：' + sync;
+    }
   }
+  // ★临时诊断条：固定在屏幕顶部、任何页面都能看到，用于远程定位「桌面组件空白」的根因。
+  // （定位完成后会移除。）点击该条即可关闭。
+  let __diagVer = '?';
+  function paintDiag() {
+    let host = document.getElementById('diagBar');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'diagBar';
+      host.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#fff3cd;color:#333;' +
+        'font-size:11px;line-height:1.55;padding:6px 8px;border-bottom:1px solid #e0c98a;word-break:break-all;';
+      host.setAttribute('role', 'note');
+      host.onclick = () => { host.parentNode && host.parentNode.removeChild(host); };
+      document.body.appendChild(host);
+    }
+    let en = 0;
+    try { en = (typeof EN_WORDS !== 'undefined' && EN_WORDS) ? EN_WORDS.length : 0; } catch (e) { }
+    let books = 0, pts = 0, ch = 0, jd = 0, mdKeys = 0;
+    try {
+      books = (subj().books || []).length;
+      const md = store.majorData || {};
+      mdKeys = Object.keys(md).length;
+      Object.keys(md).forEach((k) => {
+        const m = md[k] || {};
+        pts += (m.points || []).length;
+        ch += (m.choice || []).length;
+        jd += (m.judge || []).length;
+      });
+    } catch (e) { }
+    let sync = '未知';
+    try {
+      const st = widgetBridgeStatus();
+      sync = '原生=' + st.supported + ' 就绪=' + st.ready + ' 已推=' + st.pushed + (st.error ? (' 错误=' + st.error) : '');
+    } catch (e) { sync = '异常:' + (e && e.message); }
+    let snapInfo = '?';
+    try {
+      const s = buildWidgetSnapshot();
+      const wp = (s && s.words && s.words.pool) || [];
+      const sp = (s && s.spellPool) || [];
+      const mp = (s && s.majorPoints && s.majorPoints.items) || [];
+      const mq = (s && s.majorQuiz && s.majorQuiz.questions) || [];
+      const pl = (s && s.plan) || [];
+      snapInfo = 'pool=' + wp.length + ' spell=' + sp.length + ' 知识点=' + mp.length +
+        ' 题目=' + mq.length + ' 计划=' + pl.length;
+    } catch (e) { snapInfo = '构建失败:' + (e && e.message); }
+    host.innerHTML = '【诊断条·点击关闭】版本=' + __diagVer +
+      '<br>数据: 单词=' + en + ' 书目=' + books + '(数据教材' + mdKeys + ') 点=' + pts + ' 选=' + ch + ' 判=' + jd +
+      '<br>快照: ' + snapInfo +
+      '<br>桥: ' + sync;
+  }
+  function showGlobalDiag() {
+    try {
+      const C = window.Capacitor;
+      if (C && C.Plugins && C.Plugins.App && typeof C.Plugins.App.getInfo === 'function') {
+        C.Plugins.App.getInfo().then((i) => { __diagVer = (i && (i.version || i.build)) || '未知'; })
+          .catch(() => { __diagVer = '未知'; })
+          .then(() => { try { paintDiag(); } catch (e) { } });
+      } else if (C) { __diagVer = '原生(无App插件)'; } else { __diagVer = '网页版'; }
+    } catch (e) { __diagVer = '异常'; }
+    try { paintDiag(); } catch (e) { }
+    // 桥的推送结果会晚几秒才确定，持续刷新
+    [1500, 4000, 9000, 15000].forEach((ms) => setTimeout(() => { try { paintDiag(); } catch (e) { } }, ms));
+  }
+
   function afterSubjChange(tag) {
     toast((tag ? tag + '设置' : '学科') + '已更新');
     renderSetting();
@@ -4185,6 +4273,8 @@
 
   /* ================= 启动 ================= */
   initSplash();
+  // ★临时：顶部诊断条（定位「组件空白」用，之后移除）
+  try { showGlobalDiag(); } catch (e) { }
     // 安装包（Capacitor）里资源已随包内置，不需要 Service Worker 离线缓存，且 SW 可能缓存旧资源阻碍更新，故跳过。
     if ('serviceWorker' in navigator && !window.Capacitor) {
     window.addEventListener('load', () => {
