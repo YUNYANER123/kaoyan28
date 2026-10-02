@@ -382,7 +382,9 @@
       for (let k = 0; k < 20; k++) {
         const i = (ws.idx + k) % EN_WORDS.length;
         const w = EN_WORDS[i];
-        wpool.push({ idx: i, word: w.w, phonetic: w.p || '', meaning: w.m });
+        // 桌面「背单词」组件要不要显示「√已计入」以 App 内 store.words.learned 为准（而非组件的本地态），
+        // 故把每个池内单词「是否已在 App 背过」一并带进快照，组件按当前词实际下标判断。
+        wpool.push({ idx: i, word: w.w, phonetic: w.p || '', meaning: w.m, learned: (ws.learned || []).includes(i) });
       }
     }
     const words = {
@@ -615,7 +617,15 @@
     $('#enterBtn').addEventListener('click', () => {
       const sp = $('#splash');
       sp.classList.add('out');
-      setTimeout(() => { sp.classList.add('hidden'); $('#app').classList.remove('hidden'); renderAll(); }, 480);
+      setTimeout(() => { sp.classList.add('hidden'); $('#app').classList.remove('hidden'); renderAll();
+        // 桌面组件点 🐱 跳对应页：原生把目标页写进启动 extra，这里读出来跳过去（冷启动路径）
+        try {
+          const br = (typeof getBridge === 'function') ? getBridge() : null;
+          if (br && typeof br.getLaunchPage === 'function') {
+            br.getLaunchPage().then((r) => { if (r && r.page) goPage(r.page); }).catch(() => {});
+          }
+        } catch (e) {}
+      }, 480);
     });
   }
   function tickCountdown() {
@@ -660,6 +670,8 @@
     $('#scroll').scrollTop = 0;
     renderPage(id);
   }
+  // 供原生层（桌面组件点 🐱）直接调用跳转：window.__goPage('english')
+  window.__goPage = goPage;
   // 随学科选择动态生成的副标题
   function navSub(id) {
     const s = subj();
@@ -910,7 +922,10 @@
       out.push({
         id: key, text: tpl.text, pri: tpl.pri, cat: tpl.cat, done: !!(store.planDone && store.planDone[spanKey]),
         carry: false, tplId: tpl.id, date: ds, note: tpl.note || '',
-        timeMode: tpl.timeMode || 'none', time: tpl.time || '', timeEnd: tpl.timeEnd || '', repeat: tpl.repeat || null
+        timeMode: tpl.timeMode || 'none', time: tpl.time || '', timeEnd: tpl.timeEnd || '', repeat: tpl.repeat || null,
+        // 跨天计划：把起止日期带出来，列表里合并显示成「开始日期 开始时间 - 结束日期 结束时间」一条，
+        // 而不是每天各显示一条「当天日期 时间段」。
+        dateStart: tpl.date || '', dateEnd: tpl.dateEnd || ''
       });
     });
     // 按时间排序：无具体时间的排在前面；有时间的按开始时间升序
@@ -1000,8 +1015,17 @@
     const pri = x.pri;
     // Build time display string
     let timeStr = '';
+    // 跨天计划：无论当前停留在哪一天，都合并显示成「开始日期 开始时间 - 结束日期 结束时间」一条，
+    // 而不是 10.1 / 10.2 / 10.3 每天各显示一条「当天日期 时间段」。
+    const cross = !!(x.tplId && x.dateStart && x.dateEnd && x.dateStart !== x.dateEnd);
     if (x.tplId) {
-      if (x.timeMode === 'point' && x.time) {
+      if (cross) {
+        const fs = x.dateStart.slice(5).replace('-', '/');
+        const fe = x.dateEnd.slice(5).replace('-', '/');
+        if (x.timeMode === 'period' && x.time && x.timeEnd) timeStr = fs + ' ' + x.time + ' - ' + fe + ' ' + x.timeEnd;
+        else if (x.timeMode === 'point' && x.time) timeStr = fs + ' ' + x.time + ' - ' + fe + ' ' + x.time;
+        else timeStr = fs + ' - ' + fe;
+      } else if (x.timeMode === 'point' && x.time) {
         const d = new Date(x.date + 'T00:00:00');
         const today = todayStr();
         if (x.date === today) timeStr = '今天' + x.time;
@@ -1353,7 +1377,10 @@
       const data = { text, pri: selPri, cat: selCat, date, dateEnd, timeMode, time, timeEnd, repeat: buildRepeat(), note: $('#pmNote').value.trim() };
       if (pf.tplId) { const t = store.planTpl.find((x) => x.id === pf.tplId); if (t) Object.assign(t, data); }
       else store.planTpl.push(Object.assign({ id: uid() }, data));
-      save(); mask.classList.add('hidden'); renderPlan(); toast('已保存定时计划 ⏰');
+      save(); mask.classList.add('hidden'); renderPlan();
+      // 添加/保存定时计划后清空顶部输入框，避免文字残留在框里
+      const ti = document.getElementById('taskInput'); if (ti) ti.value = '';
+      toast('已保存定时计划 ⏰');
     };
   }
 
