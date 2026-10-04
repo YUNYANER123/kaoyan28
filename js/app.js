@@ -354,37 +354,28 @@
 
   function buildWidgetSnapshot() {
     const t = todayStr();
-    const hard = store.mode === 'hard';
-    const isM2 = (store.settings && store.settings.math) === '2';
+    const hard = store.mode === "hard";
+    const isM2 = (store.settings && store.settings.math) === "2";
 
-    // 1) 今日计划 —— 必须复用 App 内的 effTasks(t)。
-    //    它才处理「重复规则 matchRepeat / 单天 vs 跨天区间 / planHide 隐藏」；
-    //    早先自己简化实现只比日期大小，导致每天都会把所有模板都塞进来（组件显示成"我所有的计划"）。
-    const plan = effTasks(t).map((x) => ({
-      id: x.id, text: x.text, done: !!x.done,
-      time: (x.timeMode && x.timeMode !== 'none') ? (x.time || x.timeEnd || '') : ''
-    }));
-    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)
-      || String(a.time || '~').localeCompare(String(b.time || '~')));
+    // 日期窗口：除今天外，再预生成未来 WIDGET_DAY_WINDOW 天（默认 14 天）的「每日类」数据。
+    // 这样即使到了新的一天用户没打开 App，桌面组件也能在午夜按「设备当前日期」取到对应那天的数据自动翻页，
+    // 而不必等 App 打开后才重新推送快照（之前的表现：不开 App 就一直停在前一天）。
+    const WIDGET_DAY_WINDOW = 14;
+    const days = {};
+    for (let i = 0; i < WIDGET_DAY_WINDOW; i++) {
+      const ds = shiftDay(t, i);
+      days[ds] = buildDaySnapshot(ds, isM2);
+    }
 
-    // 2) 生活记录
-    const ld = lifeDay(t);
-    const life = {
-      meals: { bf: !!ld.meals.bf, lunch: !!ld.meals.lunch, dinner: !!ld.meals.dinner, exercise: !!ld.exercise },
-      water: ld.water || 0,
-      bowel: !!ld.bowel
-    };
-
-    // 3) 背单词
+    // 背单词：以「当前学习进度」为准（ws.idx 为全局下标），与日期无关，单独放顶层、不按天。
+    // （单词组件展示的是「你学到第几个」，而非「某一天的单词」，故不应随日期轮换。）
     const ws = store.words;
     const wpool = [];
-    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
+    if (typeof EN_WORDS !== "undefined" && EN_WORDS.length) {
       for (let k = 0; k < 20; k++) {
         const i = (ws.idx + k) % EN_WORDS.length;
         const w = EN_WORDS[i];
-        // 桌面「背单词」组件要不要显示「√已计入」以 App 内 store.words.learned 为准（而非组件的本地态），
-        // 故把每个池内单词「是否已在 App 背过」一并带进快照，组件按当前词实际下标判断。
-        wpool.push({ idx: i, word: w.w, phonetic: w.p || '', meaning: w.m, learned: (ws.learned || []).includes(i) });
+        wpool.push({ idx: i, word: w.w, phonetic: w.p || "", meaning: w.m, learned: (ws.learned || []).includes(i) });
       }
     }
     const words = {
@@ -393,78 +384,97 @@
       totalLearned: (ws.learned || []).length,
       goal: store.goals.word || 0,
       pool: wpool,
-      // 背单词桌面组件标星按钮要用：当前哪些单词被标星（与 App 内 store.words.favs 同源，存的是单词在 EN_WORDS 里的下标）
       favs: (ws.favs || []).slice()
     };
 
-    // 4) 随机拼写池
+    const today = days[t];
+    return {
+      date: t, mode: store.mode, isM2: isM2,
+      days: days,
+      // 顶层保留「今天」的每日数据作为兜底（老版本原生 / days 缺失时回退到今天）
+      plan: today.plan, life: today.life, spellPool: today.spellPool,
+      math: today.math, majorPoints: today.majorPoints, majorQuiz: today.majorQuiz,
+      words: words
+    };
+  }
+
+  // 生成某一天（ds = YYYY-MM-DD）的「每日类」组件数据：计划 / 生活 / 拼写 / 数学 / 专业课。
+  // 这些选取都用 ds 作随机种子，保证「同一天稳定、跨天不同」。
+  function buildDaySnapshot(ds, isM2) {
+    // 1) 今日计划 —— 复用 App 内的 effTasks(ds)（处理重复规则 / 跨天区间 / planHide）。
+    const plan = effTasks(ds).map((x) => ({
+      id: x.id, text: x.text, done: !!x.done,
+      time: (x.timeMode && x.timeMode !== "none") ? (x.time || x.timeEnd || "") : ""
+    }));
+    plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)
+      || String(a.time || "~").localeCompare(String(b.time || "~")));
+
+    // 2) 生活记录（当天；只读不写入 store.life，避免给未来日期造空记录）
+    const sl = store.life[ds];
+    const ld = sl || { wake: "", sleep: "", meals: { bf: false, lunch: false, dinner: false }, exercise: false, water: 0, period: { state: null }, mood: "", note: "", bowel: 0 };
+    const life = {
+      meals: { bf: !!(ld.meals && ld.meals.bf), lunch: !!(ld.meals && ld.meals.lunch), dinner: !!(ld.meals && ld.meals.dinner), exercise: !!(ld.meals && ld.meals.exercise) },
+      water: ld.water || 0,
+      bowel: !!ld.bowel
+    };
+
+    // 3) 随机拼写池（种子带 ds）
     const spellPool = [];
-    if (typeof EN_WORDS !== 'undefined' && EN_WORDS.length) {
-      pickStable(EN_WORDS.map((_, i) => i), Math.min(12, EN_WORDS.length), 'spell' + t).forEach((i) => {
+    if (typeof EN_WORDS !== "undefined" && EN_WORDS.length) {
+      pickStable(EN_WORDS.map((_, i) => i), Math.min(12, EN_WORDS.length), "spell" + ds).forEach((i) => {
         const w = EN_WORDS[i];
         spellPool.push({ meaning: w.m, answer: w.w });
       });
     }
 
-    // 5) 数学今日题 —— 组件里只放**选择题**（点 A/B/C/D 按钮作答）
+    // 4) 数学今日题（种子带 ds + 设置）
     const math = [];
     try {
-      const sections = isM2 ? ['高数', '线代'] : ['高数', '线代', '概率'];
+      const sections = isM2 ? ["高数", "线代"] : ["高数", "线代", "概率"];
       sections.forEach((sec) => {
         let banks = null;
         try { banks = mathBanksFor(sec); } catch (e) { banks = null; }
         if (!banks) return;
         const arr = banks.choice || [];
         if (!arr.length) return;
-        // 与 App 内「今日 N 题」同源：板块总题量均分后，取属于「选择题」的份数
         const quota = mathSplit(cnt(KEYS[sec].choice, 3), banks);
         const n = Math.min(quota.choice || 0, arr.length);
         if (n <= 0) return;
         const key = KEYS[sec].choice;
-        const seed = 'math' + sec + t + store.mode;
-        widgetDailyPick(key, arr, n, seed + 'choice').forEach((q) => {
+        const seed = "math" + sec + ds + store.mode;
+        widgetDailyPick(key, arr, n, seed + "choice").forEach((q) => {
           const p = parseMathOptions(q.q);
           math.push({
             sec: sec, stem: p ? p.stem : q.q, opts: p ? p.opts : [],
-            k: mathCorrectLetter(q.a), a: q.a || '', s: q.s || '', src: q.src || '',
-            full: q.q || ''
+            k: mathCorrectLetter(q.a), a: q.a || "", s: q.s || "", src: q.src || "",
+            full: q.q || ""
           });
         });
       });
     } catch (e) {}
 
-    // 6) 专业课知识点（用 cnt() 读题量：旧存档缺键时回落默认值，避免组件永远空）
+    // 5) 专业课知识点（种子带 ds + 设置）
     let majPoints = { count: 0, items: [] };
     try {
-      const all = widgetMajorAll('points');
-      const per = cnt('majPoints', 3) || 3;
-      const items = pickStable(all, per, 'majpts' + t + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
+      const all = widgetMajorAll("points");
+      const per = cnt("majPoints", 3) || 3;
+      const items = pickStable(all, per, "majpts" + ds + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
       majPoints = { count: items.length, items: items };
     } catch (e) {}
 
-    // 7) 专业课题目
+    // 6) 专业课题目（种子带 ds）
     let majQuiz = { choiceCount: 0, judgeCount: 0, questions: [] };
     try {
-      const cAll = widgetMajorAll('choice');
-      const jAll = widgetMajorAll('judge');
-      // 默认配置里 majChoice / majJudge 在「轻松版(easy)」下是 0，
-      // 直接按配置取会让组件一条题都没有 → 组件端兜底给 3 道选择 / 2 道判断。
-      const cn = cnt('majChoice') || 3;
-      const jn = cnt('majJudge') || 2;
-      const cItems = pickStable(cAll, cn, 'majc' + t).map((q) => ({
-        id: q.id, type: 'choice', book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book
-      }));
-      const jItems = pickStable(jAll, jn, 'majj' + t).map((q) => ({
-        id: q.id, type: 'judge', book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book
-      }));
+      const cAll = widgetMajorAll("choice");
+      const jAll = widgetMajorAll("judge");
+      const cn = cnt("majChoice") || 3;
+      const jn = cnt("majJudge") || 2;
+      const cItems = pickStable(cAll, cn, "majc" + ds).map((q) => ({ id: q.id, type: "choice", book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book }));
+      const jItems = pickStable(jAll, jn, "majj" + ds).map((q) => ({ id: q.id, type: "judge", book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book }));
       majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
     } catch (e) {}
 
-    return {
-      date: t, mode: store.mode, isM2: isM2,
-      plan: plan, life: life, words: words, spellPool: spellPool,
-      math: math, majorPoints: majPoints, majorQuiz: majQuiz
-    };
+    return { plan: plan, life: life, spellPool: spellPool, math: math, majorPoints: majPoints, majorQuiz: majQuiz };
   }
 
   function applyWidgetActions(actions) {
