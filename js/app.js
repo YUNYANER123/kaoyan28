@@ -453,24 +453,27 @@
       });
     } catch (e) {}
 
-    // 5) 专业课知识点（种子带 ds + 设置）
+    // 5) 专业课知识点 —— 复用 App 今日已抽好的那一批（widgetDailyPick 读 store.aiShown.majPoints.ids），
+    //    保证组件与 App 完全一致；种子与 App 的 pickFresh('majPoints',...,'majpts'+todayStr()+(isEasy?'e':'h')) 对齐。
     let majPoints = { count: 0, items: [] };
     try {
       const all = widgetMajorAll("points");
       const per = cnt("majPoints", 3) || 3;
-      const items = pickStable(all, per, "majpts" + ds + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c, fav: !!((store.majorFavs && store.majorFavs.points) || []).includes(p.id) }));
+      const isEasy = store.mode !== "hard";
+      const items = widgetDailyPick("majPoints", all, per, "majpts" + ds + (isEasy ? "e" : "h")).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c, fav: !!((store.majorFavs && store.majorFavs.points) || []).includes(p.id) }));
       majPoints = { count: items.length, items: items };
     } catch (e) {}
 
-    // 6) 专业课题目（种子带 ds）
+    // 6) 专业课题目 —— 复用 App 今日已抽好的选择题/判断题批次（与 App 的 pickFresh('majChoice'/'majJudge') 对齐）。
+    //    题量按用户设置（cnt 不设默认值）：App 设为 0 时组件也为空，保证与 App 完全一致。
     let majQuiz = { choiceCount: 0, judgeCount: 0, questions: [] };
     try {
       const cAll = widgetMajorAll("choice");
       const jAll = widgetMajorAll("judge");
-      const cn = cnt("majChoice") || 3;
-      const jn = cnt("majJudge") || 2;
-      const cItems = pickStable(cAll, cn, "majc" + ds).map((q) => ({ id: q.id, type: "choice", book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.choice) || []).includes(q.id) }));
-      const jItems = pickStable(jAll, jn, "majj" + ds).map((q) => ({ id: q.id, type: "judge", book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.judge) || []).includes(q.id) }));
+      const cn = cnt("majChoice") || 0;
+      const jn = cnt("majJudge") || 0;
+      const cItems = widgetDailyPick("majChoice", cAll, cn, "majc" + ds).map((q) => ({ id: q.id, type: "choice", book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.choice) || []).includes(q.id) }));
+      const jItems = widgetDailyPick("majJudge", jAll, jn, "majjudge" + ds).map((q) => ({ id: q.id, type: "judge", book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.judge) || []).includes(q.id) }));
       majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
     } catch (e) {}
 
@@ -2227,23 +2230,27 @@
     if (!rec || typeof rec !== 'object' || Array.isArray(rec)) rec = { d: '', ids: [], seen: [] };
     if (!Array.isArray(rec.ids)) rec.ids = [];
     if (!Array.isArray(rec.seen)) rec.seen = [];
-    if (rec.d !== t) { rec.d = t; rec.ids = []; }        // 换天 → 重新抽一批
-    // 优先展示「今日选中但尚未完成」的条目（未完成才会被反复重新展示）
-    let picked = rec.ids.map((id) => pool.find((x) => keyOf(x) === id)).filter(Boolean)
-                        .filter((x) => rec.seen.indexOf(keyOf(x)) < 0);
-    if (picked.length > n) picked = picked.slice(0, n);
-    if (picked.length < n && pool.length) {
-      const have = {}; rec.ids.forEach((id) => { have[id] = 1; });
-      let un = pool.filter((x) => !have[keyOf(x)] && rec.seen.indexOf(keyOf(x)) < 0);
-      // 仅在「展示即消费」的板块，题库被一轮刷完时才重置 seen（开始新一轮）；
-      // 交互型板块（consumeOnShow=false）绝不重置 seen，避免已完成的条目被重新抖出来。
-      if (consumeOnShow && un.length < n - picked.length) { rec.seen = []; un = pool.filter((x) => !have[keyOf(x)]); }
-      picked = picked.concat(dailyPick(un, Math.min(n - picked.length, un.length), seed + '|' + picked.length));
+    if (rec.d !== t) {
+      // 换天 → 重建「今日固定批次」：同一天任意次重渲染都返回这一批，满足「一天展示固定、次日 00:00 才移除」。
+      rec.d = t;
+      rec.ids = [];
+      let un = pool.filter((x) => rec.seen.indexOf(keyOf(x)) < 0);
+      if (un.length < n) { rec.seen = []; un = pool.slice(); }   // 整轮刷完 → 开启新一轮
+      rec.ids = dailyPick(un, n, seed).map(keyOf);
+      // 仅「展示即消费」的板块（作文句型 / 专业课知识点·公式）今天展示过即计入 seen（本轮已用，次日才换下一批）。
+      // 交互型板块（consumeOnShow=false）不在此写 seen，只有用户真正「点过 / 答过」时由 markShown 写入。
+      if (consumeOnShow) rec.ids.forEach((id) => { if (id && rec.seen.indexOf(id) < 0) rec.seen.push(id); });
     }
-    // 维护今日选择集 rec.ids；只有「展示即消费」的板块才在此写入 seen
-    const newIds = picked.map(keyOf);
-    rec.ids = rec.ids.concat(newIds).filter((id, i, a) => a.indexOf(id) === i);
-    if (consumeOnShow) { newIds.forEach((id) => { if (id && rec.seen.indexOf(id) < 0) rec.seen.push(id); }); }
+    // 同日重渲染：始终返回今日固定批次；不再用 seen 过滤，避免「点过 / 看过后内容乱跳、退出即被替换」。
+    let picked = rec.ids.map((id) => pool.find((x) => keyOf(x) === id)).filter(Boolean);
+    if (picked.length < n && pool.length) {
+      // 题库当天变小（如删题）时补一点，避免空白
+      const have = {}; rec.ids.forEach((id) => { have[id] = 1; });
+      const un = pool.filter((x) => !have[keyOf(x)] && rec.seen.indexOf(keyOf(x)) < 0);
+      const top = dailyPick(un, Math.min(n - picked.length, un.length), seed + '|top');
+      picked = picked.concat(top);
+      rec.ids = rec.ids.concat(top.map(keyOf)).filter((id, i, a) => a.indexOf(id) === i);
+    }
     store.aiShown[key] = rec;
     save();
     aiMaybeAuto(key, pool, n);   // 库存快见底 → 后台自动补货
