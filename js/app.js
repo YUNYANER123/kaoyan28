@@ -440,7 +440,10 @@
         const quota = mathSplit(cnt(KEYS[sec].choice, 3), banks);
         const n = Math.min(quota.choice || 0, arr.length);
         if (n <= 0) return;
-        const key = KEYS[sec].choice;
+        // key 必须与 App 侧 mathSectionDaily→pickFresh 写入 store.aiShown 的 key 完全一致
+        // （App 用 'math'+MATH_SEC_CODE[sec]+'choice'，如概率='mathGLchoice'），
+        // 否则 widgetDailyPick 读不到当日批次、回退 pickStable 选到不同题 → 与 App 不一致。
+        const key = 'math' + MATH_SEC_CODE[sec] + 'choice';
         const seed = "math" + sec + ds + store.mode;
         widgetDailyPick(key, arr, n, seed + "choice").forEach((q) => {
           const p = parseMathOptions(q.q);
