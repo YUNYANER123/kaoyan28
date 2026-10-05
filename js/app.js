@@ -458,7 +458,7 @@
     try {
       const all = widgetMajorAll("points");
       const per = cnt("majPoints", 3) || 3;
-      const items = pickStable(all, per, "majpts" + ds + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c }));
+      const items = pickStable(all, per, "majpts" + ds + store.mode).map((p) => ({ id: p.id, book: p.book, t: p.t, c: p.c, fav: !!((store.majorFavs && store.majorFavs.points) || []).includes(p.id) }));
       majPoints = { count: items.length, items: items };
     } catch (e) {}
 
@@ -469,8 +469,8 @@
       const jAll = widgetMajorAll("judge");
       const cn = cnt("majChoice") || 3;
       const jn = cnt("majJudge") || 2;
-      const cItems = pickStable(cAll, cn, "majc" + ds).map((q) => ({ id: q.id, type: "choice", book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book }));
-      const jItems = pickStable(jAll, jn, "majj" + ds).map((q) => ({ id: q.id, type: "judge", book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book }));
+      const cItems = pickStable(cAll, cn, "majc" + ds).map((q) => ({ id: q.id, type: "choice", book: q.book, q: q.q, options: q.o, answer: q.k, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.choice) || []).includes(q.id) }));
+      const jItems = pickStable(jAll, jn, "majj" + ds).map((q) => ({ id: q.id, type: "judge", book: q.book, q: q.q, answer: q.a ? 0 : 1, src: q.src || q.book, fav: !!((store.majorFavs && store.majorFavs.judge) || []).includes(q.id) }));
       majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
     } catch (e) {}
 
