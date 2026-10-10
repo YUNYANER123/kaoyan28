@@ -602,6 +602,43 @@
     const el = $('#toast'); el.textContent = msg; el.classList.toggle('main-center', area === 'main'); el.classList.add('show');
     clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 1800);
   }
+  // 背单词达成「今日目标」的专属庆祝：与一般「已背 +1」小提示明显区分——
+  // 金色大横幅 + 满屏 🎉 下落（两种手段叠加，确保一眼感知「背完啦」）。
+  let _celebrateStyleInjected = false;
+  function injectCelebrateStyle() {
+    if (_celebrateStyleInjected) return; _celebrateStyleInjected = true;
+    const st = document.createElement('style');
+    st.textContent = `
+.goal-done-banner{position:fixed;left:50%;top:36%;transform:translate(-50%,-50%) scale(.6);z-index:99999;
+  background:linear-gradient(135deg,#FFD24C,#FF8A3D);color:#5a2a00;font-weight:900;font-size:21px;line-height:1.4;
+  padding:18px 28px;border-radius:20px;box-shadow:0 14px 44px rgba(255,138,61,.55);text-align:center;
+  opacity:0;transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none;max-width:86vw}
+.goal-done-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.emoji-rain{position:fixed;inset:0;z-index:99998;pointer-events:none;overflow:hidden}
+.emoji-rain span{position:absolute;top:-9%;will-change:transform;animation:efe-fall linear forwards}
+@keyframes efe-fall{to{transform:translateY(114vh) rotate(380deg);opacity:.15}}`;
+    document.head.appendChild(st);
+  }
+  function celebrateGoalDone() {
+    injectCelebrateStyle();
+    let b = document.getElementById('goalDoneBanner');
+    if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-banner'; document.body.appendChild(b); }
+    b.textContent = '🎉 已完成今日背诵单词目标！';
+    requestAnimationFrame(() => b.classList.add('show'));
+    setTimeout(() => b.classList.remove('show'), 2600);
+    const rain = document.createElement('div'); rain.className = 'emoji-rain';
+    const EMO = ['🎉', '🎊', '✨', '🌟', '💛', '🐱'];
+    for (let i = 0; i < 64; i++) {
+      const s = document.createElement('span'); s.textContent = EMO[i % EMO.length];
+      s.style.left = (Math.random() * 100) + 'vw';
+      s.style.fontSize = (20 + Math.random() * 24) + 'px';
+      s.style.animationDuration = (2 + Math.random() * 1.7) + 's';
+      s.style.animationDelay = (Math.random() * 0.9) + 's';
+      rain.appendChild(s);
+    }
+    document.body.appendChild(rain);
+    setTimeout(() => { if (rain.parentNode) rain.parentNode.removeChild(rain); }, 4400);
+  }
 
   /* ---------- 图标 ---------- */
   // 返回 <img> 标签（透明背景的小猫 PNG），由调用方在 .nav-ico / .st-ico 上贴 pastel 渐变底
@@ -944,16 +981,23 @@
         dateStart: tpl.date || '', dateEnd: tpl.dateEnd || ''
       });
     });
-    // 按时间排序：无具体时间的排在前面；有时间的按开始时间升序
+    // 按时间排序：无具体时间的排在前面；有时间的按「用于比较的时间」升序。
+    // 跨天计划：第一天用开始时间(time)、最后一天用结束时间(timeEnd)、中间天视为全天(00:00)。
+    function sortTimeOf(item) {
+      if (item.tplId && item.dateStart && item.dateEnd && item.dateStart !== item.dateEnd) {
+        if (item.date === item.dateStart) return item.time || '';        // 第一天：按开始时间
+        if (item.date === item.dateEnd) return item.timeEnd || item.time || ''; // 最后一天：按结束时间
+        return '00:00';                                                  // 中间天：当作全天，排最前
+      }
+      return item.time || item.timeEnd || '';
+    }
     out.sort((a, b) => {
-      const hasA = a.timeMode !== 'none' && (a.time || a.timeEnd);
-      const hasB = b.timeMode !== 'none' && (b.time || b.timeEnd);
-      if (!hasA && !hasB) return 0;
-      if (!hasA) return -1;
-      if (!hasB) return 1;
-      const ta = a.time || a.timeEnd || '';
-      const tb = b.time || b.timeEnd || '';
-      return ta.localeCompare(tb);
+      const sa = sortTimeOf(a), sb = sortTimeOf(b);
+      const ha = !!sa, hb = !!sb;
+      if (!ha && !hb) return 0;
+      if (!ha) return -1;
+      if (!hb) return 1;
+      return sa.localeCompare(sb);
     });
     return out;
   }
@@ -1391,8 +1435,22 @@
       const time = timeMode !== 'none' ? $('#pmTime').value : '';
       const timeEnd = timeMode === 'period' ? $('#pmTimeEnd').value : '';
       const data = { text, pri: selPri, cat: selCat, date, dateEnd, timeMode, time, timeEnd, repeat: buildRepeat(), note: $('#pmNote').value.trim() };
-      if (pf.tplId) { const t = store.planTpl.find((x) => x.id === pf.tplId); if (t) Object.assign(t, data); }
-      else store.planTpl.push(Object.assign({ id: uid() }, data));
+      if (pf.tplId) {
+        const t = store.planTpl.find((x) => x.id === pf.tplId);
+        if (t) {
+          const wasCross = !!t.dateEnd;
+          Object.assign(t, data);
+          const willCross = !!t.dateEnd;
+          if (!wasCross && willCross) {
+            // 单天→跨天：原先按天存储的完成态（key = tplId@date）合并到整段完成标记（key = tplId），避免改为跨天后变未完成
+            const anyDone = Object.keys(store.planDone).some((k) => k.indexOf(t.id + '@') === 0 && store.planDone[k]);
+            if (anyDone) store.planDone[t.id] = true;
+          } else if (wasCross && !willCross) {
+            // 跨天→单天：把整段完成态落到新的单天日期上
+            if (store.planDone[t.id]) { store.planDone[t.id + '@' + t.date] = true; delete store.planDone[t.id]; }
+          }
+        }
+      } else store.planTpl.push(Object.assign({ id: uid() }, data));
       save(); mask.classList.add('hidden'); renderPlan();
       // 添加/保存定时计划后清空顶部输入框，避免文字残留在框里
       const ti = document.getElementById('taskInput'); if (ti) ti.value = '';
@@ -1642,7 +1700,7 @@
         toast('已背 +1，累计 ' + totalWords() + ' 个 🎉', 'main');
         if (store.goals.word && d.en.wordCount >= store.goals.word && !d.en.wordGoalDone) {
           d.en.wordGoalDone = true; save();
-          toast('已完成今日背诵单词目标~ 🎉', 'main');
+          celebrateGoalDone();
         }
       } else toast('这个词已计入啦', 'main');
       renderEnWord();
@@ -2987,7 +3045,7 @@
     if (!books.length) { host.innerHTML = `<div class="empty"><div class="e-cat">📚</div>尚未设置专业课书目。<br>请到「设置 → 我的学科」填写你的专业课书名与编者。</div>`; return; }
     const all = majorAllPoints();
     const per = cnt('majPoints', 3);
-    const pick = pickFresh('majPoints', all, Math.min(per, all.length), 'majpts' + todayStr() + (isEasy ? 'e' : 'h'));
+    const pick = pickFresh('majPoints', all, Math.min(per, all.length), 'majpts' + todayStr() + (isEasy ? 'e' : 'h'), true);
     const favPts = majFavItems('points');
     const dailyHTML = `<div class="maj-pts">${pick.map((p) => `<div class="item blur" data-pt="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn ${isMajFav('points', p.id) ? 'on' : ''}" data-fav="points" data-id="${esc(p.id)}" title="收藏">${isMajFav('points', p.id) ? '★' : '☆'}</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>`;
     host.innerHTML = majWarnHTML()
