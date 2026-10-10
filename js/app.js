@@ -610,10 +610,10 @@
     const st = document.createElement('style');
     st.textContent = `
 .goal-done-banner{position:fixed;left:calc(50% + var(--sbw) / 2);top:34%;transform:translate(-50%,-50%) scale(.6);z-index:99999;
-  background:linear-gradient(135deg,#2F80ED,#5AA9FF);color:#fff;font-weight:900;font-size:16px;line-height:1.3;
-  padding:11px 26px;border-radius:18px;border:2px solid rgba(255,170,210,.9);
-  box-shadow:0 12px 38px rgba(47,128,237,.5), 0 0 0 3px rgba(255,150,200,.35);text-align:center;
-  opacity:0;transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none;max-width:80vw}
+  background:linear-gradient(135deg,#2F80ED,#5AA9FF);color:#fff;font-weight:900;font-size:15px;line-height:1.4;
+  padding:10px 22px;border-radius:18px;border:2px solid rgba(255,170,210,.9);
+  box-shadow:0 12px 38px rgba(47,128,237,.5), 0 0 0 3px rgba(255,150,200,.35);text-align:center;white-space:nowrap;
+  opacity:0;transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none;max-width:92vw}
 .goal-done-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .emoji-rain{position:fixed;inset:0;z-index:99998;pointer-events:none;overflow:hidden}
 .emoji-rain span{position:absolute;top:-9%;will-change:transform;animation:efe-fall linear forwards}
@@ -641,50 +641,19 @@
     setTimeout(() => { if (rain.parentNode) rain.parentNode.removeChild(rain); }, 4400);
   }
 
-  // 自定义时间选择器：用完全可控的「清除(→00:00) / 取消 / 确定」取代原生 <input type="time">。
-  // 原因：原生 time 输入框在部分安卓 WebView 上「清除」等同于「取消」，无法直接置为 00:00，且各机型行为不一致。
-  let _timePickerStyleInjected = false;
-  function injectTimePickerStyle() {
-    if (_timePickerStyleInjected) return; _timePickerStyleInjected = true;
+  // 时间字段样式（模式标签 / 清除按钮）：注入一次，避免改动仓库 styles.css。
+  // 设计：保留原生 <input type="time"> 的时钟交互（用户可直接点时钟选时间）；
+  // 原生「清除」在部分安卓 WebView 上无效，故额外提供显式「清除」按钮，点击 → 置 00:00。
+  let _uiStyleInjected = false;
+  function injectUiStyle() {
+    if (_uiStyleInjected) return; _uiStyleInjected = true;
     const st = document.createElement('style');
     st.textContent = `
-.tp-overlay{position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;background:rgba(15,30,50,.45);backdrop-filter:blur(2px)}
-.tp-overlay.show{display:flex}
-.tp{width:84vw;max-width:340px;background:#fff;border-radius:20px;padding:18px 16px 16px;box-shadow:0 18px 50px rgba(0,0,0,.3);text-align:center}
-.tp-title{font-size:15px;font-weight:900;color:#234;margin-bottom:6px}
-.tp-cols{display:flex;gap:16px;justify-content:center;margin:8px 0 16px}
-.tp-col{display:flex;flex-direction:column;align-items:center;gap:6px}
-.tp-h{font-size:13px;font-weight:800;color:#2F80ED}
-.tp-col select{width:92px;height:168px;border-radius:12px;border:1px solid rgba(47,128,237,.25);background:#fff;font-size:18px;font-weight:800;color:#234;text-align:center}
-.tp-actions{display:flex;gap:10px}
-.tp-actions button{flex:1;height:46px;border-radius:13px;font-size:15px;font-weight:800;border:none}
-.tp-clear{background:rgba(255,150,200,.2);color:#E0457E}
-.tp-cancel{background:rgba(0,0,0,.06);color:#555}
-.tp-ok{background:linear-gradient(135deg,#2F80ED,#5AA9FF);color:#fff}
 .pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
-#sleepTime,#wakeTime{width:100%;height:40px;border-radius:11px;background:rgba(46,144,232,.07);border:1px solid rgba(46,144,232,.18);padding:0 12px;font-size:14px;font-weight:700;color:#234;text-align:center;cursor:pointer}`;
+.tp-cell{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.tp-cell .pm-time{flex:1;min-width:0}
+.tp-clr{flex:0 0 auto;font-size:11px;font-weight:800;color:#E0457E;background:rgba(255,150,200,.18);border:none;border-radius:8px;padding:5px 9px;cursor:pointer}`;
     document.head.appendChild(st);
-  }
-  function openTimePicker(initVal, cb) {
-    injectTimePickerStyle();
-    let [ih, im] = (initVal && initVal.indexOf(':') > 0) ? initVal.split(':') : ['00', '00'];
-    const opts = (n) => Array.from({ length: n }, (_, i) => `<option value="${String(i).padStart(2, '0')}">${String(i).padStart(2, '0')}</option>`).join('');
-    let ov = document.getElementById('tpOverlay');
-    if (!ov) { ov = document.createElement('div'); ov.id = 'tpOverlay'; ov.className = 'tp-overlay'; document.body.appendChild(ov); }
-    ov.innerHTML = `<div class="tp"><div class="tp-title">选择时间</div>
-      <div class="tp-cols"><div class="tp-col"><div class="tp-h">时</div><select id="tpH">${opts(24)}</select></div>
-      <div class="tp-col"><div class="tp-h">分</div><select id="tpM">${opts(60)}</select></div></div>
-      <div class="tp-actions"><button class="tp-clear" id="tpClear">清除</button><button class="tp-cancel" id="tpCancel">取消</button><button class="tp-ok" id="tpOk">确定</button></div></div>`;
-    ov.classList.add('show');
-    $('#tpH').value = ih; $('#tpM').value = im;
-    $('#tpCancel').onclick = () => ov.classList.remove('show');
-    $('#tpClear').onclick = () => { ov.classList.remove('show'); cb('00:00'); };
-    $('#tpOk').onclick = () => { const v = $('#tpH').value + ':' + $('#tpM').value; ov.classList.remove('show'); cb(v); };
-    ov.onclick = (e) => { if (e.target === ov) ov.classList.remove('show'); };
-  }
-  function bindTimeInput(sel, onChange) {
-    const el = $(sel);
-    el.onclick = () => openTimePicker(el.value || '', (v) => { el.value = v; if (onChange) onChange(); });
   }
 
   /* ---------- 图标 ---------- */
@@ -1207,6 +1176,7 @@
   /* —— 添加定时/重复任务 弹窗 —— */
   function openPlanModal(pf) {
     pf = pf || {};
+    injectUiStyle();
     const iniDate = pf.date || todayStr();
     const priKeys = Object.keys(PRI_LABEL);
     // Build category list with delete for custom
@@ -1230,9 +1200,10 @@
         <label class="pm-l">时间</label>
         <div class="pm-row">
           <span id="pmTimeModeLabel" class="pm-timemode">不设置</span>
-          <input type="text" id="pmTime" class="pm-time" readonly placeholder="开始时间" value="${pf.time || ''}">
-          <input type="text" id="pmTimeEnd" class="pm-time" readonly placeholder="结束时间" value="${pf.timeEnd || ''}">
+          <span class="tp-cell"><input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}"><button type="button" class="tp-clr" data-clr="pmTime">清除</button></span>
+          <span class="tp-cell"><input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}"><button type="button" class="tp-clr" data-clr="pmTimeEnd">清除</button></span>
         </div>
+        <div class="pm-hint">提示：仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
         <label class="pm-l">重复</label>
         <div class="pm-repeat" id="pmRepeat">
           ${['none', 'daily', 'weekly', 'monthly', 'yearly', 'lunar', 'workday', 'custom'].map((r) => `<button data-r="${r}" class="pmr ${r === 'none' ? 'on' : ''}">${({ none: '不重复', daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年', lunar: '农历每年', workday: '法定工作日', custom: '自定义' })[r]}</button>`).join('')}
@@ -1313,14 +1284,17 @@
       $$m('#pmCatBtns .pcat').forEach((x) => x.classList.toggle('on', x.dataset.cat === selCat));
     };
 
-    // 时间：默认「不设置」，直接点时间框即可填写；填第一个→时间点，填第二个→时间段（无需先选模式）
+    // 时间：默认「不设置」，直接点时钟即可填写；填第一个→时间点，填第二个→时间段（无需先选模式）
     const updateTimeMode = () => {
       const a = $('#pmTime').value, b = $('#pmTimeEnd').value;
       $('#pmTimeModeLabel').textContent = (a && b) ? '时间段' : ((a || b) ? '时间点' : '不设置');
     };
     updateTimeMode();
-    bindTimeInput('#pmTime', updateTimeMode);
-    bindTimeInput('#pmTimeEnd', updateTimeMode);
+    $('#pmTime').onchange = updateTimeMode;
+    $('#pmTimeEnd').onchange = updateTimeMode;
+    document.querySelectorAll('#modalMask .tp-clr').forEach((btn) => {
+      btn.onclick = () => { const el = $('#' + btn.dataset.clr); if (el) { el.value = '00:00'; updateTimeMode(); } };
+    });
     $('#pmDate').onchange = syncRepeatFromDate;   // 日期变更 → 重复选项随日期自动改变
 
     // ---- 重复逻辑 ----
@@ -3549,11 +3523,9 @@
     const tdB = ld.querySelector('[data-ld="today"]'); if (tdB) tdB.onclick = () => { lifeViewDate = t; renderLife(); };
 
     const L = lifeDay(vd);
+    injectUiStyle();
     const wt = $('#wakeTime'), st = $('#sleepTime');
-    // 原生 <input type="time"> 在部分安卓 WebView 上「清除」无效，统一改为只读文本 + 自定义选择器
-    if (wt.type === 'time') { wt.type = 'text'; wt.readOnly = true; }
-    if (st.type === 'time') { st.type = 'text'; st.readOnly = true; }
-    wt.placeholder = '起床时间'; st.placeholder = '入睡时间';
+    // 保留原生 <input type="time"> 时钟交互；原生「清除」在部分安卓 WebView 上无效，故补显式「清除」按钮 → 置 00:00
     wt.value = L.wake || ''; st.value = L.sleep || '';
     const recalc = () => {
       L.wake = wt.value; L.sleep = st.value; save();
@@ -3567,8 +3539,12 @@
       } else $('#sleepRes').textContent = '填写后自动计算睡眠时长';
     };
     wt.onchange = recalc; st.onchange = recalc;
-    wt.onclick = () => openTimePicker(wt.value || '', (v) => { wt.value = v; recalc(); });
-    st.onclick = () => openTimePicker(st.value || '', (v) => { st.value = v; recalc(); });
+    [['wakeTime', wt], ['sleepTime', st]].forEach(([id, el]) => {
+      const row = el.closest('.sleep-row'); if (!row) return;
+      let clr = row.querySelector('.tp-clr[data-clr="' + id + '"]');
+      if (!clr) { clr = document.createElement('button'); clr.type = 'button'; clr.className = 'tp-clr'; clr.dataset.clr = id; clr.textContent = '清除'; el.parentNode.insertAdjacentElement('afterend', clr); }
+      clr.onclick = () => { el.value = '00:00'; recalc(); };
+    });
     recalc();
 
     // 三餐 & 运动
