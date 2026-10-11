@@ -641,18 +641,14 @@
     setTimeout(() => { if (rain.parentNode) rain.parentNode.removeChild(rain); }, 4400);
   }
 
-  // 时间字段样式（模式标签 / 清除按钮）：注入一次，避免改动仓库 styles.css。
-  // 设计：保留原生 <input type="time"> 的时钟交互（用户可直接点时钟选时间）；
-  // 原生「清除」在部分安卓 WebView 上无效，故额外提供显式「清除」按钮，点击 → 置 00:00。
+  // 时间字段样式（仅模式标签）：注入一次，避免改动仓库 styles.css。
+  // 保留原生 <input type="time"> 的时钟交互（用户可直接点时钟选时间），不做任何定制、不加清除按钮。
   let _uiStyleInjected = false;
   function injectUiStyle() {
     if (_uiStyleInjected) return; _uiStyleInjected = true;
     const st = document.createElement('style');
     st.textContent = `
-.pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
-.tp-cell{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
-.tp-cell .pm-time{flex:1;min-width:0}
-.tp-clr{flex:0 0 auto;font-size:11px;font-weight:800;color:#E0457E;background:rgba(255,150,200,.18);border:none;border-radius:8px;padding:5px 9px;cursor:pointer}`;
+.pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}`;
     document.head.appendChild(st);
   }
 
@@ -1200,8 +1196,8 @@
         <label class="pm-l">时间</label>
         <div class="pm-row">
           <span id="pmTimeModeLabel" class="pm-timemode">不设置</span>
-          <span class="tp-cell"><input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}"><button type="button" class="tp-clr" data-clr="pmTime">清除</button></span>
-          <span class="tp-cell"><input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}"><button type="button" class="tp-clr" data-clr="pmTimeEnd">清除</button></span>
+          <input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}">
+          <input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}">
         </div>
         <div class="pm-hint">提示：仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
         <label class="pm-l">重复</label>
@@ -1292,9 +1288,6 @@
     updateTimeMode();
     $('#pmTime').onchange = updateTimeMode;
     $('#pmTimeEnd').onchange = updateTimeMode;
-    document.querySelectorAll('#modalMask .tp-clr').forEach((btn) => {
-      btn.onclick = () => { const el = $('#' + btn.dataset.clr); if (el) { el.value = '00:00'; updateTimeMode(); } };
-    });
     $('#pmDate').onchange = syncRepeatFromDate;   // 日期变更 → 重复选项随日期自动改变
 
     // ---- 重复逻辑 ----
@@ -3539,12 +3532,6 @@
       } else $('#sleepRes').textContent = '填写后自动计算睡眠时长';
     };
     wt.onchange = recalc; st.onchange = recalc;
-    [['wakeTime', wt], ['sleepTime', st]].forEach(([id, el]) => {
-      const row = el.closest('.sleep-row'); if (!row) return;
-      let clr = row.querySelector('.tp-clr[data-clr="' + id + '"]');
-      if (!clr) { clr = document.createElement('button'); clr.type = 'button'; clr.className = 'tp-clr'; clr.dataset.clr = id; clr.textContent = '清除'; el.parentNode.insertAdjacentElement('afterend', clr); }
-      clr.onclick = () => { el.value = '00:00'; recalc(); };
-    });
     recalc();
 
     // 三餐 & 运动
