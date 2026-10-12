@@ -104,6 +104,8 @@
       planTpl: [],                  // 定时/重复任务模板 [{id,text,pri,cat,date,dateEnd,timeMode,time,timeEnd,repeat,note}]
       planDone: {},                 // {tplId@date:true} 模板实例完成状态
       planHide: {},                 // {tplId@date:true} 仅隐藏某天实例
+      planOverride: {},             // {tplId@date:{text,pri,cat,note}} 单天覆盖（重复计划仅改某天的内容/备注/优先级/分类）
+      planOverrideFrom: {},         // {tplId:{from,text,pri,cat,note}} 从某天起覆盖（当天及以后）
       customCats: [],               // [{id,name}] 用户手动新建的分类
       life: {},                     // {date:{wake,sleep,meals,exercise,water,period,mood,note,bowel}}
       periods: [],                  // [{start,end}]
@@ -175,6 +177,7 @@
       words: Object.assign(d.words, s.words || {}),
       checkins: s.checkins || {}, dailyStudy: s.dailyStudy || {},
       plan: s.plan || {}, planTpl: s.planTpl || [], planDone: s.planDone || {}, planHide: s.planHide || {},
+      planOverride: s.planOverride || {}, planOverrideFrom: s.planOverrideFrom || {},
       life: s.life || {}, periods: s.periods || {},
       modeCounts: mergeModeCounts(d.modeCounts, s.modeCounts),
       mathWrongSec: (s.mathWrongSec && typeof s.mathWrongSec === 'object' && !Array.isArray(s.mathWrongSec))
@@ -661,7 +664,19 @@
 .pm-timebtn.has-val{color:#222}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
 .ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}
-#planUnfin{margin-left:auto;align-self:center;flex:0 0 auto}`;
+#planUnfin{margin-left:auto;align-self:center;flex:0 0 auto}
+.scope-mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999}
+.scope-card{background:#fff;border-radius:16px;width:300px;max-width:86vw;padding:18px 16px 14px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+.scope-card h3{font-size:16px;margin:0 0 2px;color:#222}
+.pm-scope-tip{font-size:13px;color:#7a7a7a;margin:4px 0 8px;line-height:1.5}
+.pm-scope{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid rgba(46,144,232,.25);border-radius:11px;margin:8px 0;cursor:pointer;background:#fff;transition:.12s}
+.pm-scope:active{transform:scale(.99)}
+.pm-scope.on{border-color:#2F80ED;background:rgba(47,128,237,.07)}
+.pm-scope input{position:absolute;opacity:0;width:0;height:0}
+.pm-scope-ico{width:18px;height:18px;border-radius:50%;border:2px solid #bcd2ee;flex:0 0 auto;position:relative;box-sizing:border-box}
+.pm-scope.on .pm-scope-ico{border-color:#2F80ED}
+.pm-scope.on .pm-scope-ico:after{content:"";position:absolute;inset:3px;border-radius:50%;background:#2F80ED}
+.pm-scope-tx{font-size:14px;color:#222}`;
     document.head.appendChild(st);
   }
 
@@ -1084,9 +1099,17 @@
       // 跨天计划（有 dateEnd）：整段共用一个完成标记（以 tpl.id 为键），在任一 anchor 天完成即视为整段完成，
       // 所跨的每一天都显示「已完成」——满足「只需完成一次，所有天都显示完成」。单天模版仍按当天标记。
       const spanKey = tpl.dateEnd ? tpl.id : key;
+      // 单天覆盖（planOverride[tplId@date]）优先；其次「从某天起覆盖」（planOverrideFrom，days>=from）；否则用模板。
+      const ov = (store.planOverride && store.planOverride[key]) || null;
+      const from = (store.planOverrideFrom && store.planOverrideFrom[tpl.id] && ds >= store.planOverrideFrom[tpl.id].from) ? store.planOverrideFrom[tpl.id] : null;
+      const use = ov || from;
+      const ttext = use ? use.text : tpl.text;
+      const tnote = use ? use.note : tpl.note;
+      const tpri = use ? use.pri : tpl.pri;
+      const tcat = use ? use.cat : tpl.cat;
       out.push({
-        id: key, text: tpl.text, pri: tpl.pri, cat: tpl.cat, done: !!(store.planDone && store.planDone[spanKey]),
-        carry: false, tplId: tpl.id, date: ds, note: tpl.note || '',
+        id: key, text: ttext, pri: tpri, cat: tcat, done: !!(store.planDone && store.planDone[spanKey]),
+        carry: false, tplId: tpl.id, date: ds, note: tnote || '',
         timeMode: tpl.timeMode || 'none', time: tpl.time || '', timeEnd: tpl.timeEnd || '', repeat: tpl.repeat || null,
         // 跨天计划：把起止日期带出来，列表里合并显示成「开始日期 开始时间 - 结束日期 结束时间」一条，
         // 而不是每天各显示一条「当天日期 时间段」。
@@ -1255,6 +1278,8 @@
       if (!confirm('删除该定时任务（含所有重复）？')) return;
       store.planTpl = store.planTpl.filter((t) => t.id !== item.tplId);
       Object.keys(store.planDone).forEach((k) => { if (k === item.tplId || k.indexOf(item.tplId + '@') === 0) delete store.planDone[k]; });
+      if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planOverride[k]; });
+      if (store.planOverrideFrom) delete store.planOverrideFrom[item.tplId];
     } else {
       store.plan[item.date] = (store.plan[item.date] || []).filter((x) => x.id !== item.id);
     }
@@ -1569,6 +1594,9 @@
         if (t) {
           const wasCross = !!t.dateEnd;
           Object.assign(t, data);
+          // 改了整段模板（时间/重复/内容/备注），清掉该模板所有按天覆盖，避免覆盖层与新模板打架
+          if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(t.id + '@') === 0) delete store.planOverride[k]; });
+          if (store.planOverrideFrom) delete store.planOverrideFrom[t.id];
           const willCross = !!t.dateEnd;
           if (!wasCross && willCross) {
             // 单天→跨天：原先按天存储的完成态（key = tplId@date）合并到整段完成标记（key = tplId），避免改为跨天后变未完成
@@ -1585,6 +1613,61 @@
       const ti = document.getElementById('taskInput'); if (ti) ti.value = '';
       toast('已保存定时计划 ⏰');
     };
+  }
+
+  /* —— 重复计划「改某天的内容/备注」作用范围 —— */
+  // 判断模板是否跨多天（决定是否弹范围选择）
+  function tplIsMultiDay(tpl) {
+    if (tpl.dateEnd && tpl.dateEnd !== tpl.date) return true;          // 跨天区间
+    if (!tpl.repeat || tpl.repeat.type === 'none') return false;       // 单天无重复
+    let cnt = 0, cur = tpl.date, g = 0;
+    const end = (tpl.repeat.stop && tpl.repeat.stop.type === 'date') ? tpl.repeat.stop.date : shiftDay(tpl.date, 365 * 6);
+    while (cur <= end && g++ < 4000) { if (baseMatch(tpl, cur)) { cnt++; if (cnt > 1) return true; } cur = shiftDay(cur, 1); }
+    return cnt > 1;
+  }
+  // 按所选范围落库：day=仅当天；since=当天及以后；all=整个重复周期（清掉该模板所有覆盖）
+  function applyScope(tplId, ds, newVals, scope) {
+    if (scope === 'all') {
+      const t = store.planTpl.find((x) => x.id === tplId);
+      if (t) Object.assign(t, newVals);
+      if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(tplId + '@') === 0) delete store.planOverride[k]; });
+      if (store.planOverrideFrom) delete store.planOverrideFrom[tplId];
+      save(); toast('已修改重复周期的所有计划');
+    } else if (scope === 'since') {
+      store.planOverrideFrom = store.planOverrideFrom || {};
+      store.planOverrideFrom[tplId] = Object.assign({ from: ds }, newVals);
+      if (store.planOverride) delete store.planOverride[tplId + '@' + ds];   // 当天由 from 覆盖，避免冗余
+      save(); toast('已修改当天及以后的计划');
+    } else { // day
+      store.planOverride = store.planOverride || {};
+      store.planOverride[tplId + '@' + ds] = newVals;
+      save(); toast('已仅修改当天的计划');
+    }
+  }
+  // 作用范围弹窗（独立覆盖层，不破坏详情弹窗）
+  function openScopeDialog(tplId, ds, newVals, onClose) {
+    const m = document.createElement('div');
+    m.className = 'scope-mask';
+    m.innerHTML = `<div class="scope-card">
+      <h3>修改重复计划</h3>
+      <div class="pm-scope-tip">该计划为重复计划。修改「内容 / 备注」将作用于：</div>
+      <label class="pm-scope on"><input type="radio" name="sc" value="day" checked><span class="pm-scope-ico"></span><span class="pm-scope-tx">仅修改当天的计划</span></label>
+      <label class="pm-scope"><input type="radio" name="sc" value="since"><span class="pm-scope-ico"></span><span class="pm-scope-tx">修改当天及以后的计划</span></label>
+      <label class="pm-scope"><input type="radio" name="sc" value="all"><span class="pm-scope-ico"></span><span class="pm-scope-tx">修改重复周期的所有计划</span></label>
+      <div class="pm-actions"><button class="pm-cancel" id="scCancel">取消</button><button class="pm-save" id="scOk">确定</button></div>
+    </div>`;
+    document.body.appendChild(m);
+    const labels = Array.from(m.querySelectorAll('.pm-scope'));
+    labels.forEach((l) => l.onclick = () => { labels.forEach((x) => x.classList.remove('on')); l.classList.add('on'); const r = l.querySelector('input'); if (r) r.checked = true; });
+    m.querySelector('#scCancel').onclick = () => { m.remove(); onClose && onClose(false); };
+    m.querySelector('#scOk').onclick = () => {
+      const sel = m.querySelector('input[name="sc"]:checked');
+      const scope = sel ? sel.value : 'day';
+      m.remove();
+      applyScope(tplId, ds, newVals, scope);
+      onClose && onClose(true);
+    };
+    m.onclick = (e) => { if (e.target === m) { m.remove(); onClose && onClose(false); } };
   }
 
   /* —— 任务详情 / 编辑 —— */
@@ -1644,8 +1727,24 @@
     $('#dtCancel').onclick = () => mask.classList.add('hidden');
     $('#dtSave').onclick = () => {
       const text = $('#dtText').value.trim(); if (!text) { toast('请填写内容'); return; }
-      tpl.text = text; tpl.pri = dtPri; tpl.cat = dtCat; tpl.note = $('#dtNote').value.trim();
-      save(); mask.classList.add('hidden'); renderPlan(); toast('已保存');
+      const note = $('#dtNote').value.trim();
+      if (item.tplId) {
+        const t = store.planTpl.find((x) => x.id === item.tplId);
+        if (!t) { toast('计划不存在'); return; }
+        const newVals = { text, pri: dtPri, cat: dtCat, note };
+        const cur = { text: item.text, pri: item.pri, cat: item.cat, note: item.note || '' };
+        const changed = newVals.text !== cur.text || newVals.pri !== cur.pri || newVals.cat !== cur.cat || newVals.note !== cur.note;
+        if (!changed) { mask.classList.add('hidden'); renderPlan(); return; }
+        if (tplIsMultiDay(t)) {
+          openScopeDialog(t.id, item.date, newVals, () => { mask.classList.add('hidden'); renderPlan(); });
+        } else {
+          Object.assign(t, newVals); save(); mask.classList.add('hidden'); renderPlan(); toast('已保存');
+        }
+      } else {
+        const t = (store.plan[item.date] || []).find((x) => x.id === item.id);
+        if (t) { t.text = text; t.pri = dtPri; t.cat = dtCat; t.note = note; }
+        save(); mask.classList.add('hidden'); renderPlan(); toast('已保存');
+      }
     };
     const dtDel = $('#dtDel'); if (dtDel) dtDel.onclick = () => { mask.classList.add('hidden'); delTask(item); };
     const dtHide = $('#dtHide'); if (dtHide) dtHide.onclick = () => { store.planHide[item.id] = true; save(); mask.classList.add('hidden'); renderPlan(); toast('已隐藏今天该任务'); };
