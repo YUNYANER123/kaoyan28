@@ -660,7 +660,8 @@
 .pm-timebtn{flex:1 1 0;min-width:0;font-size:13px;padding:9px 10px;border:1px solid rgba(46,144,232,.3);border-radius:10px;background:#fff;color:#2F80ED;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pm-timebtn.has-val{color:#222}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
-.ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}`;
+.ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}
+#planUnfin{margin-left:auto;align-self:center;flex:0 0 auto}`;
     document.head.appendChild(st);
   }
 
@@ -923,19 +924,21 @@
     $('#addTask').onclick = addTask;
     $('#addPlanTimer').onclick = () => openPlanModal({ text: $('#taskInput').value.trim(), date: planDate });
     $('#planUnfin').onclick = openUnfinPage;
-    // 🔍 计划搜索按钮：放到「进度圈左边」的一行里（⚠ 在进度圈上方，上下不重叠 → 恢复上一版高度）。
-    // 不改动 index.html：用 JS 把 .ph-ring 包进一个横向 row，🔍 在 ring 左侧。renderPlan 可能多次调用，用 #planSearch 存在性做幂等保护。
-    const ring = document.querySelector('.ph-ring');
-    if (ring && !document.getElementById('planSearch')) {
+    // v1.33e 布局重构：⚠ 移出 .ph-right，放到筛选按钮行（全部/未完成/已完成）右侧；🔍 放回进度圈上方。
+    // 这样 .ph-right 恢复「🔍 + 进度圈」原始宽度（约 58px），不再挤窄左侧日期框，▶ 不再溢出换行。
+    // 不改动 index.html：⚠ 复用已存在的 #planUnfin 节点搬移（保留其 onclick）；🔍 用 JS 注入。
+    const pfRow = document.getElementById('planFilter');
+    const unfinBtn = document.getElementById('planUnfin');
+    if (pfRow && unfinBtn && unfinBtn.parentElement !== pfRow) {
+      pfRow.appendChild(unfinBtn); // 同一 DOM 节点重复 appendChild 不会重复，天然幂等
+    }
+    const phRight = document.querySelector('.ph-right');
+    const phRing = document.querySelector('.ph-ring');
+    if (phRight && phRing && !document.getElementById('planSearch')) {
       const sb = document.createElement('button');
       sb.id = 'planSearch'; sb.className = 'ph-warn'; sb.textContent = '🔍';
       sb.title = '搜索计划';
-      const row = document.createElement('div');
-      row.className = 'ph-ringrow';
-      row.style.cssText = 'display:flex;align-items:center;gap:6px;';
-      ring.parentNode.insertBefore(row, ring);
-      row.appendChild(sb);
-      row.appendChild(ring);
+      phRight.insertBefore(sb, phRing); // 放在进度圈之前 = 上方
       sb.onclick = openPlanSearch;
     }
     $('#addCat').onclick = () => {
