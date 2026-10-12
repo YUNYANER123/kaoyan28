@@ -656,8 +656,11 @@
     const st = document.createElement('style');
     st.textContent = `
 .pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
-.pm-time-row{flex-wrap:wrap;row-gap:6px}
-.pm-tl{flex:0 0 auto;font-size:12px;color:#6b7785;margin-right:2px;white-space:nowrap}`;
+.pm-time-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px}
+.pm-timebtn{flex:1 1 0;min-width:0;font-size:13px;padding:9px 10px;border:1px solid rgba(46,144,232,.3);border-radius:10px;background:#fff;color:#2F80ED;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-timebtn.has-val{color:#222}
+.pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
+.ph-date{white-space:nowrap}`;
     document.head.appendChild(st);
   }
 
@@ -1290,8 +1293,10 @@
         <label class="pm-l">时间</label>
         <div class="pm-row pm-time-row">
           <span id="pmTimeModeLabel" class="pm-timemode">不设置</span>
-          <span class="pm-tl">开始时间</span><input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}">
-          <span class="pm-tl">截止时间</span><input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}">
+          <label class="pm-timebtn" id="pmTimeBtn" for="pmTime">开始时间</label>
+          <label class="pm-timebtn" id="pmTimeEndBtn" for="pmTimeEnd">截止时间</label>
+          <input type="time" id="pmTime" class="pm-time-hidden" value="${pf.time || ''}">
+          <input type="time" id="pmTimeEnd" class="pm-time-hidden" value="${pf.timeEnd || ''}">
         </div>
         <div class="pm-hint">仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
         <label class="pm-l">重复</label>
@@ -1379,9 +1384,19 @@
       const a = $('#pmTime').value, b = $('#pmTimeEnd').value;
       $('#pmTimeModeLabel').textContent = (a && b) ? '时间段' : ((a || b) ? '时间点' : '不设置');
     };
-    updateTimeMode();
-    $('#pmTime').onchange = updateTimeMode;
-    $('#pmTimeEnd').onchange = updateTimeMode;
+    const syncTimeBtn = (btnId, inputId, label) => {
+      const btn = $('#' + btnId), inp = $('#' + inputId);
+      btn.textContent = inp.value ? label + ' ' + inp.value : label;
+      btn.classList.toggle('has-val', !!inp.value);
+    };
+    const syncTime = () => {
+      updateTimeMode();
+      syncTimeBtn('pmTimeBtn', 'pmTime', '开始时间');
+      syncTimeBtn('pmTimeEndBtn', 'pmTimeEnd', '截止时间');
+    };
+    $('#pmTime').onchange = syncTime;
+    $('#pmTimeEnd').onchange = syncTime;
+    syncTime();
     $('#pmDate').onchange = syncRepeatFromDate;   // 日期变更 → 重复选项随日期自动改变
 
     // ---- 重复逻辑 ----
