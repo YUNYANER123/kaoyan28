@@ -402,10 +402,17 @@
   // 这些选取都用 ds 作随机种子，保证「同一天稳定、跨天不同」。
   function buildDaySnapshot(ds, isM2) {
     // 1) 今日计划 —— 复用 App 内的 effTasks(ds)（处理重复规则 / 跨天区间 / planHide）。
-    const plan = effTasks(ds).map((x) => ({
-      id: x.id, text: x.text, done: !!x.done,
-      time: (x.timeMode && x.timeMode !== "none") ? (x.time || x.timeEnd || "") : ""
-    }));
+    const plan = effTasks(ds).map((x) => {
+      let time = "";
+      const cross = !!(x.tplId && x.dateStart && x.dateEnd && x.dateStart !== x.dateEnd);
+      if (cross) {
+        // 跨天计划：第一天（dateStart）显示设置的开始时间；其余天视为全天 → 显示 00:00
+        time = (x.date === x.dateStart) ? (x.time || "") : "00:00";
+      } else if (x.timeMode && x.timeMode !== "none") {
+        time = x.time || x.timeEnd || "";
+      }
+      return { id: x.id, text: x.text, done: !!x.done, time };
+    });
     plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)
       || String(a.time || "~").localeCompare(String(b.time || "~")));
 
@@ -911,6 +918,18 @@
     $('#addTask').onclick = addTask;
     $('#addPlanTimer').onclick = () => openPlanModal({ text: $('#taskInput').value.trim(), date: planDate });
     $('#planUnfin').onclick = openUnfinPage;
+    // ⚠️ 旁加 🔍 计划搜索按钮（与 #planUnfin 共用 ph-warn 样式，避免改动 index.html）
+    const ub = document.getElementById('planUnfin');
+    if (ub) {
+      let sb = document.getElementById('planSearch');
+      if (!sb) {
+        sb = document.createElement('button');
+        sb.id = 'planSearch'; sb.className = 'ph-warn'; sb.textContent = '🔍';
+        sb.title = '搜索计划';
+        ub.insertAdjacentElement('afterend', sb);
+        sb.onclick = openPlanSearch;
+      }
+    }
     $('#addCat').onclick = () => {
       const name = prompt('新建分类名称（例如：复试、科研、运动）');
       if (!name) return;
@@ -939,24 +958,47 @@
     (store.planTpl || []).forEach((tp) => { if (tp.date && tp.date < t && (!start || tp.date < start)) start = tp.date; });
     if (!start) return [];
     if (start < limit) start = limit;
-    const groups = [];
+    const singleGroups = [];                 // 单天未完成：{ds, items}
+    const crossMap = {};                      // tplId -> {ds(=dateStart), dsEnd, cross, items}
     let cur = start, guard = 0;
     while (cur < t && guard++ <= UNFIN_LOOKBACK + 2) {
       const items = effTasks(cur).filter((x) => !x.done);
-      if (items.length) groups.push({ ds: cur, items });
+      for (const x of items) {
+        const cross = !!(x.tplId && x.dateStart && x.dateEnd && x.dateStart !== x.dateEnd);
+        if (cross) {
+          // 跨天计划：整段合并成一条（以 tpl.id 为键），不按天重复显示
+          if (!crossMap[x.tplId]) crossMap[x.tplId] = { ds: x.dateStart, dsEnd: x.dateEnd, cross: true, items: [x] };
+        } else {
+          let g = singleGroups.find((g) => g.ds === cur);
+          if (!g) { g = { ds: cur, items: [] }; singleGroups.push(g); }
+          g.items.push(x);
+        }
+      }
       cur = shiftDay(cur, 1);
     }
-    return groups.reverse();                        // 最近的日期排在前面
+    const crossGroups = Object.values(crossMap);
+    const all = singleGroups.concat(crossGroups);
+    all.sort((a, b) => {                     // 日期降序；同日时跨天排在单天前面
+      if (a.ds !== b.ds) return a.ds < b.ds ? 1 : -1;
+      return (a.cross ? 0 : 1) - (b.cross ? 0 : 1);
+    });
+    return all;
   }
   function openUnfinPage() {
     const groups = pastUnfinished();
     const total = groups.reduce((s, g) => s + g.items.length, 0);
     const body = total
-      ? `<div class="unfin-tip">共 <b>${total}</b> 项以往未完成的计划（不含今天）· 点击任意一项可跳转到当天的计划页</div>` +
-        groups.map((g) => `<div class="unfin-day">
-          <div class="unfin-date">${g.ds.slice(5).replace('-', '/')} · 周${WD_CN[new Date(g.ds + 'T00:00:00').getDay()]}<span>${g.items.length} 项未完成</span></div>
-          ${g.items.map((x) => `<div class="unfin-item" data-unfin="${g.ds}"><div class="ui-t">${esc(x.text)}</div>${x.carry ? '<span class="ui-tag">顺延</span>' : ''}</div>`).join('')}
-        </div>`).join('')
+      ? `<div class="unfin-tip">共 <b>${total}</b> 项以往未完成的计划 · 点击任意一项可跳转到当天的计划页</div>` +
+        groups.map((g) => {
+          const isCross = !!g.cross;
+          const dateLabel = isCross
+            ? `${g.ds.slice(5).replace('-', '/')}-${g.dsEnd.slice(5).replace('-', '/')} 跨天计划`
+            : `${g.ds.slice(5).replace('-', '/')} · 周${WD_CN[new Date(g.ds + 'T00:00:00').getDay()]}`;
+          return `<div class="unfin-day">
+            <div class="unfin-date">${dateLabel}<span>${g.items.length} 项未完成</span></div>
+            ${g.items.map((x) => `<div class="unfin-item" data-unfin="${g.ds}"><div class="ui-t">${esc(x.text)}</div>${x.carry ? '<span class="ui-tag">顺延</span>' : ''}</div>`).join('')}
+          </div>`;
+        }).join('')
       : `<div class="empty"><div class="e-cat">🎉</div>以往没有未完成的计划，太棒啦</div>`;
     openModal('⚠ 以往未完成的计划', body);
     const mask = document.getElementById('modalMask');
@@ -964,10 +1006,57 @@
     Array.from(mask.querySelectorAll('[data-unfin]')).forEach((el) => {
       el.onclick = () => {
         mask.classList.add('hidden');
-        planDate = el.dataset.unfin;                // 跳到该计划所在的那一天
+        planDate = el.dataset.unfin;                // 跳到该计划所在的那一天（跨天 → 第一天）
         goPage('plan');
       };
     });
+  }
+  // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
+  function openPlanSearch() {
+    const body = `<div class="ps-wrap">
+      <input type="text" id="planSearchInput" class="ps-input" placeholder="输入关键词，搜索计划名 / 备注…" autocomplete="off" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:14px;box-sizing:border-box;outline:none">
+      <div id="planSearchResults" class="ps-results" style="margin-top:10px"></div>
+    </div>`;
+    openModal('🔍 搜索计划', body);
+    const input = document.getElementById('planSearchInput');
+    const results = document.getElementById('planSearchResults');
+    const mask = document.getElementById('modalMask');
+    if (!input || !results) return;
+    const run = () => {
+      const kw = input.value.trim().toLowerCase();
+      if (!kw) { results.innerHTML = '<div class="empty"><div class="e-cat">🔍</div>输入关键词即可搜到「计划名 / 备注」匹配的计划</div>'; return; }
+      const hits = [];
+      Object.keys(store.plan || {}).forEach((ds) => {
+        (store.plan[ds] || []).forEach((t) => {
+          if ((t.text && t.text.toLowerCase().indexOf(kw) >= 0) || (t.note && t.note.toLowerCase().indexOf(kw) >= 0))
+            hits.push({ text: t.text, note: t.note || '', day: ds, cross: false });
+        });
+      });
+      (store.planTpl || []).forEach((tp) => {
+        if ((tp.text && tp.text.toLowerCase().indexOf(kw) >= 0) || (tp.note && tp.note.toLowerCase().indexOf(kw) >= 0)) {
+          const cross = !!(tp.date && tp.dateEnd && tp.dateEnd !== tp.date);
+          const rep = !!tp.repeat;
+          hits.push({ text: tp.text, note: tp.note || '', day: rep ? todayStr() : (tp.date || todayStr()), cross: cross });
+        }
+      });
+      if (!hits.length) { results.innerHTML = '<div class="empty"><div class="e-cat">🐾</div>没有匹配的计划</div>'; return; }
+      results.innerHTML = hits.map((h) => `<div class="ps-item" data-day="${h.day}" style="padding:10px 12px;border-radius:10px;background:rgba(46,144,232,.06);margin-bottom:8px;cursor:pointer">
+        <div style="font-weight:700">${esc(h.text)}</div>
+        ${h.note ? '<div style="font-size:12px;color:#666;margin-top:3px">📝 ' + esc(h.note) + '</div>' : ''}
+        <div style="font-size:12px;color:#9aa;margin-top:4px">${h.day.slice(5).replace('-', '/')}${h.cross ? ' 起（跨天计划）' : ''}</div>
+      </div>`).join('');
+      results.querySelectorAll('.ps-item').forEach((el) => {
+        el.onclick = () => {
+          planDate = el.dataset.day;                // 跨天计划 → 第一天（dateStart）
+          if (mask) mask.classList.add('hidden');
+          goPage('plan');
+        };
+      });
+    };
+    input.addEventListener('input', run);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+    run();
+    setTimeout(() => { try { input.focus(); } catch (e) {} }, 60);
   }
 
   /* —— 定时/重复 任务 —— */
@@ -1199,7 +1288,7 @@
           <input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}">
           <input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}">
         </div>
-        <div class="pm-hint">提示：仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
+        <div class="pm-hint">仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
         <label class="pm-l">重复</label>
         <div class="pm-repeat" id="pmRepeat">
           ${['none', 'daily', 'weekly', 'monthly', 'yearly', 'lunar', 'workday', 'custom'].map((r) => `<button data-r="${r}" class="pmr ${r === 'none' ? 'on' : ''}">${({ none: '不重复', daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年', lunar: '农历每年', workday: '法定工作日', custom: '自定义' })[r]}</button>`).join('')}
@@ -1969,7 +2058,6 @@
     const readCount = day(t).en.readCount || 0;
     const label = s.en === '2' ? '英语二 + 英语一阅读真题' : '英语一阅读真题';
     host.innerHTML = `
-      <div class="hint">${store.mode === 'hard' ? '高强度版' : '轻松版'}：今日 ${picked.length} 篇（${label}）· 点开查看原文 + 四选一真题</div>
       <div class="sec-title">今日阅读（${picked.length} 篇）<i>已精读 ${readCount} 篇</i></div>
       <div class="rl-list">
         ${picked.map((p, i) => `<div class="item rl-item" data-ri="${i}">
@@ -2043,7 +2131,6 @@
     examPool = examPool.concat((store.aiBank.enTrExam || []).map((x) => ({ m: x, kind: 'ai', __k: x.__k })));
     const exams = pickFresh('enTrExam', examPool, cnt('enTranslateExam', 3), 'entransE' + t + store.mode + s.en, false);
     host.innerHTML = `
-      <div class="hint">每日 ${mats.length} 篇网络精翻材料 + ${exams.length} 句翻译真题${s.en === '2' ? '（含英语一、英语二）' : '（英语一）'} · 点开查看全文 / 标准答案</div>
       <div class="sec-title">📚 每日精翻材料（${mats.length} 篇）</div>
       <div class="rl-list">${mats.map((m, i) => `<div class="item rl-item" data-ti="${i}"><div class="it-h"><span class="badge g">${esc(m.src)}</span></div><div class="it-body">${esc(m.title)}</div><div class="it-key">点击查看全文与译文 →</div></div>`).join('')}</div>
       ${aiBoxHTML('enTrans', matPool)}
@@ -2082,14 +2169,13 @@
       return `<div class="acc"><div class="acc-h">${esc(c)}<span class="ar">▾</span></div><div class="acc-b"><div class="it-en">${esc(pick.en)}</div><div class="it-zh">${esc(pick.zh)}</div></div></div>`;
     }).join('');
     host.innerHTML = `
-      <div class="hint">作文语句每日更新（今日精选 3 句，不重复）· 下方按主题每日轮换一句 · 长难句常驻可仿写</div>
       <div class="sec-title">今日精选句型</div>
       ${daily.map((s) => `<div class="item"><div class="it-en">${esc(s.en)}</div><div class="it-zh">${esc(s.zh)}</div></div>`).join('')}
       ${aiBoxHTML('enWrite', pool)}
-      <div class="sec-title">优质句型（按主题分类 · 每日轮换）</div>
+      <div class="sec-title">优质句型</div>
       ${themeHTML}
       <div class="sec-title">长难句拆解（仿写素材）</div>
-      ${(typeof EN_LONG_SENTENCES !== 'undefined' ? EN_LONG_SENTENCES : []).map((s) => `<div class="item"><div class="it-en">${esc(s.en)}</div><div class="it-zh">${esc(s.zh)}</div><div class="it-key">拆解：${esc(s.key)}<br><span style="opacity:.7">题源：${esc(s.src)}</span></div></div>`).join('')}`;
+      ${(() => { const la = (typeof EN_LONG_SENTENCES !== 'undefined' ? EN_LONG_SENTENCES : []); const ls = dailyPick(la, la.length, 'enlong' + t); return ls.map((s) => `<div class="item"><div class="it-en">${esc(s.en)}</div><div class="it-zh">${esc(s.zh)}</div><div class="it-key">拆解：${esc(s.key)}<br><span style="opacity:.7">题源：${esc(s.src)}</span></div></div>`).join(''); })()}`;
     bindAcc(host);
     wireAiGen();
   }
@@ -2106,8 +2192,7 @@
     const pool = withAI('enZhenti', bank.length ? bank : fallback);
     const list = pickFresh('enZhenti', pool, zhenN, 'enzhen' + t + store.mode + s.en, false);
     const kindTxt = s.en === '2' ? '图表作文（英语二）' : '图画作文（英语一）';
-    host.innerHTML = `<div class="hint">真题库 · ${kindTxt} · 每日 ${list.length} 篇 · 点开查看题目与范文</div>
-      <div class="rl-list">${list.map((e, i) => `<div class="item rl-item" data-zi="${i}"><div class="it-h"><span class="badge p">${esc(e.y)}</span></div><div class="it-body">${esc(String(e.t).split('\n')[0])}</div><div class="it-key">点击查看题目与范文 →</div></div>`).join('')}</div>
+    host.innerHTML = `<div class="rl-list">${list.map((e, i) => `<div class="item rl-item" data-zi="${i}"><div class="it-h"><span class="badge p">${esc(e.y)}</span></div><div class="it-body">${esc(String(e.t).split('\n')[0])}</div><div class="it-key">点击查看题目与范文 →</div></div>`).join('')}</div>
       ${aiBoxHTML('enZhenti', pool)}`;
     list.forEach((e, i) => {
       host.querySelector(`[data-zi="${i}"]`).onclick = () => {
@@ -2346,10 +2431,15 @@
   }
   const aiMsg = {};   // {key:最近一次生成的结果文案}，重绘后仍然显示
   // 模块底部的一键扩充区：显示库存/剩余，并给出生成按钮
-  function aiBoxHTML(key, pool) {
+  function aiBoxHTML(key, pool, countKeys) {
     const sp = AI_SPECS[key]; if (!sp) return '';
-    const total = (pool || []).length;
-    const left = freshLeft(key, pool);
+    let total = (pool || []).length, left = freshLeft(key, pool);
+    // 数学公式回忆按「科目」分池抽取并分键记录已学（mathF_高数/线代/概率），但 AI 扩充区用合并键 'mathF' 展示；
+    // 故此处支持传入 countKeys 聚合各科目的「题库总量 / 本轮剩余」，使「本轮还有」正确反映点过的条目。
+    if (countKeys && countKeys.length) {
+      total = countKeys.reduce((a, c) => a + (c.pool || []).length, 0);
+      left = countKeys.reduce((a, c) => a + freshLeft(c.key, c.pool), 0);
+    }
     const avail = cloudAvailable();
     const tip = !avail.ok
       ? '⚠️ ' + avail.msg
@@ -2678,7 +2768,7 @@
     host.innerHTML =
       `<div class="hint">公式回忆每日更新（每科 ${per} 条${subj().math === '2' ? ' · 数学二无概率论、高数不含数一专属内容' : ''}）· 点击条目可切换「遮盖 / 显示」对照记忆</div>` +
       subjs.map(subjHTML).join('') +
-      aiBoxHTML('mathF', subjs.reduce((a, k) => a.concat(map[k]), []));
+      aiBoxHTML('mathF', subjs.reduce((a, k) => a.concat(map[k]), []), subjs.map((k) => ({ key: 'mathF_' + k, pool: map[k] })));
     $$('#mathF .mf-list li').forEach((li) => { li.onclick = () => { li.classList.toggle('blur'); const sk = li.dataset.sk, fk = li.dataset.fk; if (sk && fk) markShown('mathF_' + sk, [fk]); }; });
     wireAiGen();
   }
@@ -3067,7 +3157,6 @@
     const dailyHTML = `<div class="maj-pts">${pick.map((p) => `<div class="item blur" data-pt="${esc(p.id)}"><div class="it-h"><span class="badge g">${esc(p.book)}</span><button class="star-btn ${isMajFav('points', p.id) ? 'on' : ''}" data-fav="points" data-id="${esc(p.id)}" title="收藏">${isMajFav('points', p.id) ? '★' : '☆'}</button></div><div class="it-body" style="font-weight:800">${esc(p.t)}</div><div class="it-zh">${esc(p.c)}</div></div>`).join('')}</div>`;
     host.innerHTML = majWarnHTML()
       + `<div class="maj-fav-bar"><button class="mview" data-majfav>⭐ 我的收藏知识点（${favPts.length}）</button></div>`
-      + `<div class="hint">专业课知识点 / 公式${isEasy ? '（轻松版·理解为主）' : '（备考版）'} · 今日 ${pick.length} 条（共 ${all.length} 条）· 点⭐收藏</div>`
       + dailyHTML + aiBoxHTML('majPoints', all);
     $$('#majP .item[data-pt]').forEach((li) => li.onclick = () => li.classList.toggle('blur'));
     $$('#majP [data-fav]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); majFavToggle(b.dataset.fav, b.dataset.id); renderMajorPoints(isEasy); });
@@ -3127,7 +3216,7 @@
     const all = majorAllChoice();
     const n = nChoice;
     const qs = pickFresh('majChoice', all, Math.min(n, all.length), 'majc' + todayStr(), false);
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道选择题（来自 ${books.length} 本书）· 点选项对答案，点 ⭐ 收藏</div>` + qs.map((q, i) => `
+    host.innerHTML = chips + majWarnHTML() + qs.map((q, i) => `
       <div class="item" data-ci="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('choice', q.id) ? 'on' : ''}" data-fav="choice" data-id="${esc(q.id)}" title="收藏">${isMajFav('choice', q.id) ? '★' : '☆'}</button></div>
         <div class="it-body">${esc(q.q)}</div>
@@ -3211,7 +3300,7 @@
     const all = majorAllJudge();
     const n = nJudge;
     const qs = pickFresh('majJudge', all, Math.min(n, all.length), 'majjudge' + todayStr(), false);
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">${MODE_LABEL()}：今日 ${qs.length} 道判断题（来自 ${books.length} 本书）· 点「正确/错误」作答，点 ⭐ 收藏</div>` + (qs.length ? qs.map((q, i) => `
+    host.innerHTML = chips + majWarnHTML() + (qs.length ? qs.map((q, i) => `
       <div class="item" data-ji="${i}">
         <div class="qmeta"><span>第 ${i + 1} 题</span><b>${esc(q.book)}</b><button class="star-btn ${isMajFav('judge', q.id) ? 'on' : ''}" data-fav="judge" data-id="${esc(q.id)}" title="收藏">${isMajFav('judge', q.id) ? '★' : '☆'}</button></div>
         <div class="it-body">${esc(q.q)}</div>
@@ -3272,7 +3361,7 @@
     const all = majorAllShort();
     const n = nShort;
     const qs = pickFresh('majShort', all, Math.min(n, all.length), 'majs' + todayStr(), false);
-    host.innerHTML = chips + majWarnHTML() + `<div class="hint">高强度版：今日 ${qs.length} 道简答题（来自 ${books.length} 本书）· 点 ⭐ 收藏</div>` + qs.map((q, i) => `<div class="acc" data-msk="${esc(keyOf(q))}"><div class="acc-h">Q${i + 1}：${esc(q.q)}<button class="star-btn ${isMajFav('short', q.id) ? 'on' : ''}" data-fav="short" data-id="${esc(q.id)}" title="收藏">${isMajFav('short', q.id) ? '★' : '☆'}</button><span class="ar">▾</span></div><div class="acc-b"><div class="it-zh" style="font-weight:600">${esc(q.a)}</div><div class="it-src" style="margin-top:7px">题源：${esc(q.src || '')}</div></div></div>`).join('') + aiBoxHTML('majShort', all);
+    host.innerHTML = chips + majWarnHTML() + qs.map((q, i) => `<div class="acc" data-msk="${esc(keyOf(q))}"><div class="acc-h">Q${i + 1}：${esc(q.q)}<button class="star-btn ${isMajFav('short', q.id) ? 'on' : ''}" data-fav="short" data-id="${esc(q.id)}" title="收藏">${isMajFav('short', q.id) ? '★' : '☆'}</button><span class="ar">▾</span></div><div class="acc-b"><div class="it-zh" style="font-weight:600">${esc(q.a)}</div><div class="it-src" style="margin-top:7px">题源：${esc(q.src || '')}</div></div></div>`).join('') + aiBoxHTML('majShort', all);
     bindAcc(host);
     $$('#majS .acc').forEach((acc) => { const hh = acc.querySelector('.acc-h'); if (hh) hh.addEventListener('click', () => { const k = acc.dataset.msk; if (k) markShown('majShort', [k]); }); });
     wireChips(); wireFav(); wireMajGen(); wireAiGen();
