@@ -106,6 +106,7 @@
       planHide: {},                 // {tplId@date:true} 仅隐藏某天实例
       planOverride: {},             // {tplId@date:{text,pri,cat,note}} 单天覆盖（重复计划仅改某天的内容/备注/优先级/分类）
       planOverrideFrom: {},         // {tplId:{from,text,pri,cat,note}} 从某天起覆盖（当天及以后）
+      planHideFrom: {},             // {tplId:date} 删除「当天及以后」标记：date 及之后每天实例被隐藏
       customCats: [],               // [{id,name}] 用户手动新建的分类
       life: {},                     // {date:{wake,sleep,meals,exercise,water,period,mood,note,bowel}}
       periods: [],                  // [{start,end}]
@@ -177,7 +178,7 @@
       words: Object.assign(d.words, s.words || {}),
       checkins: s.checkins || {}, dailyStudy: s.dailyStudy || {},
       plan: s.plan || {}, planTpl: s.planTpl || [], planDone: s.planDone || {}, planHide: s.planHide || {},
-      planOverride: s.planOverride || {}, planOverrideFrom: s.planOverrideFrom || {},
+      planOverride: s.planOverride || {}, planOverrideFrom: s.planOverrideFrom || {}, planHideFrom: s.planHideFrom || {},
       life: s.life || {}, periods: s.periods || {},
       modeCounts: mergeModeCounts(d.modeCounts, s.modeCounts),
       mathWrongSec: (s.mathWrongSec && typeof s.mathWrongSec === 'object' && !Array.isArray(s.mathWrongSec))
@@ -1096,6 +1097,7 @@
       if (!matchRepeat(tpl, ds)) return;
       const key = tpl.id + '@' + ds;
       if (store.planHide && store.planHide[key]) return;
+      if (store.planHideFrom && store.planHideFrom[tpl.id] && ds >= store.planHideFrom[tpl.id]) return;   // 被「删除当天及以后」隐藏
       // 跨天计划（有 dateEnd）：整段共用一个完成标记（以 tpl.id 为键），在任一 anchor 天完成即视为整段完成，
       // 所跨的每一天都显示「已完成」——满足「只需完成一次，所有天都显示完成」。单天模版仍按当天标记。
       const spanKey = tpl.dateEnd ? tpl.id : key;
@@ -1275,11 +1277,16 @@
   }
   function delTask(item) {
     if (item.tplId) {
-      if (!confirm('删除该定时任务（含所有重复）？')) return;
-      store.planTpl = store.planTpl.filter((t) => t.id !== item.tplId);
+      const t = store.planTpl.find((x) => x.id === item.tplId);
+      if (!t) { store.planHide[item.id] = true; save(); renderPlan(); return; }   // 模板已不在，直接隐藏该天实例
+      if (tplIsMultiDay(t)) { openDeleteDialog(t.id, item.date, () => { renderPlan(); }); return; }
+      // 单天模板：直接删整段（不弹窗）
+      store.planTpl = store.planTpl.filter((x) => x.id !== item.tplId);
       Object.keys(store.planDone).forEach((k) => { if (k === item.tplId || k.indexOf(item.tplId + '@') === 0) delete store.planDone[k]; });
       if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planOverride[k]; });
       if (store.planOverrideFrom) delete store.planOverrideFrom[item.tplId];
+      if (store.planHide) Object.keys(store.planHide).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planHide[k]; });
+      if (store.planHideFrom) delete store.planHideFrom[item.tplId];
     } else {
       store.plan[item.date] = (store.plan[item.date] || []).filter((x) => x.id !== item.id);
     }
@@ -1665,6 +1672,53 @@
       const scope = sel ? sel.value : 'day';
       m.remove();
       applyScope(tplId, ds, newVals, scope);
+      onClose && onClose(true);
+    };
+    m.onclick = (e) => { if (e.target === m) { m.remove(); onClose && onClose(false); } };
+  }
+  // 按所选范围删除重复计划：day=仅当天(隐藏该天)；since=当天及以后(隐藏 date>=from)；all=删整段模板并清所有覆盖/隐藏
+  function applyDelete(tplId, ds, scope) {
+    store.planDone = store.planDone || {};
+    if (scope === 'all') {
+      store.planTpl = store.planTpl.filter((t) => t.id !== tplId);
+      Object.keys(store.planDone).forEach((k) => { if (k === tplId || k.indexOf(tplId + '@') === 0) delete store.planDone[k]; });
+      if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(tplId + '@') === 0) delete store.planOverride[k]; });
+      if (store.planOverrideFrom) delete store.planOverrideFrom[tplId];
+      if (store.planHide) Object.keys(store.planHide).forEach((k) => { if (k.indexOf(tplId + '@') === 0) delete store.planHide[k]; });
+      if (store.planHideFrom) delete store.planHideFrom[tplId];
+      save(); toast('已删除重复周期的所有计划');
+    } else if (scope === 'since') {
+      store.planHideFrom = store.planHideFrom || {};
+      store.planHideFrom[tplId] = ds;
+      if (store.planHide) delete store.planHide[tplId + '@' + ds];   // 当天由 from 覆盖，避免冗余
+      save(); toast('已删除当天及以后的计划');
+    } else { // day
+      store.planHide = store.planHide || {};
+      store.planHide[tplId + '@' + ds] = true;
+      save(); toast('已仅删除当天的计划');
+    }
+  }
+  // 删除重复计划「作用范围」弹窗（与修改弹窗同款样式，仅文案/语义不同）
+  function openDeleteDialog(tplId, ds, onClose) {
+    const m = document.createElement('div');
+    m.className = 'scope-mask';
+    m.innerHTML = `<div class="scope-card">
+      <h3>删除重复计划</h3>
+      <div class="pm-scope-tip">该计划为重复计划。删除将作用于：</div>
+      <label class="pm-scope on"><input type="radio" name="sd" value="day" checked><span class="pm-scope-ico"></span><span class="pm-scope-tx">仅删除当天的计划</span></label>
+      <label class="pm-scope"><input type="radio" name="sd" value="since"><span class="pm-scope-ico"></span><span class="pm-scope-tx">删除当天及以后的计划</span></label>
+      <label class="pm-scope"><input type="radio" name="sd" value="all"><span class="pm-scope-ico"></span><span class="pm-scope-tx">删除重复周期的所有计划</span></label>
+      <div class="pm-actions"><button class="pm-cancel" id="sdCancel">取消</button><button class="pm-save" id="sdOk">确定</button></div>
+    </div>`;
+    document.body.appendChild(m);
+    const labels = Array.from(m.querySelectorAll('.pm-scope'));
+    labels.forEach((l) => l.onclick = () => { labels.forEach((x) => x.classList.remove('on')); l.classList.add('on'); const r = l.querySelector('input'); if (r) r.checked = true; });
+    m.querySelector('#sdCancel').onclick = () => { m.remove(); onClose && onClose(false); };
+    m.querySelector('#sdOk').onclick = () => {
+      const sel = m.querySelector('input[name="sd"]:checked');
+      const scope = sel ? sel.value : 'day';
+      m.remove();
+      applyDelete(tplId, ds, scope);
       onClose && onClose(true);
     };
     m.onclick = (e) => { if (e.target === m) { m.remove(); onClose && onClose(false); } };
