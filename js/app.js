@@ -655,7 +655,9 @@
     if (_uiStyleInjected) return; _uiStyleInjected = true;
     const st = document.createElement('style');
     st.textContent = `
-.pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}`;
+.pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
+.pm-time-row{flex-wrap:wrap;row-gap:6px}
+.pm-tl{flex:0 0 auto;font-size:12px;color:#6b7785;margin-right:2px;white-space:nowrap}`;
     document.head.appendChild(st);
   }
 
@@ -918,17 +920,20 @@
     $('#addTask').onclick = addTask;
     $('#addPlanTimer').onclick = () => openPlanModal({ text: $('#taskInput').value.trim(), date: planDate });
     $('#planUnfin').onclick = openUnfinPage;
-    // ⚠️ 旁加 🔍 计划搜索按钮（与 #planUnfin 共用 ph-warn 样式，避免改动 index.html）
-    const ub = document.getElementById('planUnfin');
-    if (ub) {
-      let sb = document.getElementById('planSearch');
-      if (!sb) {
-        sb = document.createElement('button');
-        sb.id = 'planSearch'; sb.className = 'ph-warn'; sb.textContent = '🔍';
-        sb.title = '搜索计划';
-        ub.insertAdjacentElement('afterend', sb);
-        sb.onclick = openPlanSearch;
-      }
+    // 🔍 计划搜索按钮：放到「进度圈左边」的一行里（⚠ 在进度圈上方，上下不重叠 → 恢复上一版高度）。
+    // 不改动 index.html：用 JS 把 .ph-ring 包进一个横向 row，🔍 在 ring 左侧。renderPlan 可能多次调用，用 #planSearch 存在性做幂等保护。
+    const ring = document.querySelector('.ph-ring');
+    if (ring && !document.getElementById('planSearch')) {
+      const sb = document.createElement('button');
+      sb.id = 'planSearch'; sb.className = 'ph-warn'; sb.textContent = '🔍';
+      sb.title = '搜索计划';
+      const row = document.createElement('div');
+      row.className = 'ph-ringrow';
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+      ring.parentNode.insertBefore(row, ring);
+      row.appendChild(sb);
+      row.appendChild(ring);
+      sb.onclick = openPlanSearch;
     }
     $('#addCat').onclick = () => {
       const name = prompt('新建分类名称（例如：复试、科研、运动）');
@@ -1283,10 +1288,10 @@
         </div>
         <div class="pm-hint">结束日期留空＝单天；填写＝跨天（含首尾每天各一条）</div>
         <label class="pm-l">时间</label>
-        <div class="pm-row">
+        <div class="pm-row pm-time-row">
           <span id="pmTimeModeLabel" class="pm-timemode">不设置</span>
-          <input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}">
-          <input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}">
+          <span class="pm-tl">开始时间</span><input type="time" id="pmTime" class="pm-time" value="${pf.time || ''}">
+          <span class="pm-tl">截止时间</span><input type="time" id="pmTimeEnd" class="pm-time" value="${pf.timeEnd || ''}">
         </div>
         <div class="pm-hint">仅填写「开始时间」为「时间点」；同时填写「开始时间」与「截止时间」为「时间段」。</div>
         <label class="pm-l">重复</label>
