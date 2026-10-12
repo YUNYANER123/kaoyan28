@@ -660,7 +660,7 @@
 .pm-timebtn{flex:1 1 0;min-width:0;font-size:13px;padding:9px 10px;border:1px solid rgba(46,144,232,.3);border-radius:10px;background:#fff;color:#2F80ED;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pm-timebtn.has-val{color:#222}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
-.ph-date{white-space:nowrap}`;
+.ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}`;
     document.head.appendChild(st);
   }
 
@@ -932,7 +932,7 @@
       sb.title = '搜索计划';
       const row = document.createElement('div');
       row.className = 'ph-ringrow';
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;';
       ring.parentNode.insertBefore(row, ring);
       row.appendChild(sb);
       row.appendChild(ring);
