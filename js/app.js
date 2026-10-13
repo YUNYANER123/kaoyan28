@@ -665,7 +665,48 @@
 .pm-timebtn.has-val{color:#222}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
 .ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}
-#planUnfin{margin-left:auto;align-self:center;flex:0 0 auto}
+/* 需求3：⚠️ 固定紧邻「已完成」按钮右侧，用固定小间距而非 margin-left:auto，避免随容器宽度漂移 */
+#planUnfin{margin-left:10px;align-self:center;flex:0 0 auto}
+/* 需求7：计划页 ⚠️ 右侧的 📊 统计入口按钮 */
+.plan-statbtn{margin-left:6px;align-self:center;flex:0 0 auto;width:30px;height:27px;border-radius:10px;border:none;background:rgba(46,144,232,.12);color:#2F80ED;font-size:15px;font-weight:900;cursor:pointer}
+.plan-statbtn:active{transform:scale(.94)}
+/* 需求4：非重复计划「确认删除」弹窗的删除按钮（红） */
+.pm-delbtn{background:#ff5a5f;color:#fff;border:none}
+.pm-delbtn:active{transform:scale(.97)}
+/* 需求1：详情备注框高度自适应（最少 3 行，超出自动拉长，不内滚） */
+#dtNote{min-height:64px;overflow:hidden;resize:none}
+/* 需求7：统计页样式 */
+.stats-head{padding:4px 2px}
+.stats-tabs{display:flex;gap:8px;margin:6px 0 10px}
+.stab{flex:1;padding:9px 0;border-radius:12px;border:1.5px solid rgba(46,144,232,.25);background:#fff;color:#2F80ED;font-weight:800;font-size:14px;cursor:pointer}
+.stab.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
+.stats-switcher{display:flex;align-items:center;justify-content:center;gap:10px;margin:6px 0 14px;font-size:15px;font-weight:800;color:#222}
+.stats-switcher .ss-arrow{width:30px;height:30px;border-radius:50%;border:none;background:rgba(46,144,232,.12);color:#2F80ED;font-size:14px;font-weight:900;cursor:pointer}
+.stats-switcher .ss-pick{background:none;border:none;color:#222;font-size:15px;font-weight:800;cursor:pointer;padding:4px 6px}
+.stats-switcher .ss-pick:active{color:#2F80ED}
+.stats-cust{display:flex;gap:8px;align-items:center;justify-content:center;margin:6px 0 14px;flex-wrap:wrap}
+.stats-cust input[type=date]{padding:7px 9px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:13px}
+.stats-box{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow2)}
+.stats-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat-cell{background:rgba(46,144,232,.06);border-radius:12px;padding:12px 10px;text-align:center}
+.stat-cell .sc-n{font-size:22px;font-weight:900;color:#2F80ED}
+.stat-cell .sc-l{font-size:12px;color:#7a7a7a;margin-top:3px}
+.stats-ring-tabs{display:flex;gap:8px;justify-content:center;margin-bottom:10px}
+.srt{padding:7px 16px;border-radius:12px;border:1.5px solid rgba(46,144,232,.25);background:#fff;color:#2F80ED;font-weight:800;font-size:13px;cursor:pointer}
+.srt.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
+.ring{width:190px;height:190px;border-radius:50%;margin:6px auto;position:relative;background:#eceff3}
+.ring-hole{position:absolute;inset:20px;background:#fff;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring-hole .rh-l{font-size:13px;color:#7a7a7a}
+.ring-hole .rh-n{font-size:22px;font-weight:900;color:#222}
+.stats-legend{margin-top:12px;display:flex;flex-direction:column;gap:7px}
+.legend-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#444}
+.legend-dot{width:12px;height:12px;border-radius:3px;flex:0 0 auto}
+.legend-row .lg-n{font-weight:700}
+.legend-row .lg-p{margin-left:auto;color:#888}
+.scope-card .pm-scope-tip.warn{color:#c0392b}
+.yr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.yr-cell{padding:10px 0;border-radius:10px;border:1px solid rgba(46,144,232,.25);background:#fff;color:#2F80ED;font-weight:800;cursor:pointer}
+.yr-cell.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
 .scope-mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999}
 .scope-card{background:#fff;border-radius:16px;width:300px;max-width:86vw;padding:18px 16px 14px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
 .scope-card h3{font-size:16px;margin:0 0 2px;color:#222}
@@ -754,7 +795,11 @@
     });
   }
   let curPage = 'home';
+  let _pageStack = [];        // 返回键用的页面栈（存放「上一页」id）
+  let _suppressStack = false; // 返回驱动跳转时不入栈，避免回退时重复入栈
   function goPage(id) {
+    if (!_suppressStack && id !== curPage) _pageStack.push(curPage);
+    if (_pageStack.length > 30) _pageStack.shift();
     curPage = id;
     $$('.nav-item').forEach((b) => b.classList.toggle('on', b.dataset.nav === id));
     $$('.page').forEach((p) => p.classList.toggle('hidden', p.dataset.page !== id));
@@ -763,6 +808,39 @@
     $('#pageSub').textContent = navSub(id);
     $('#scroll').scrollTop = 0;
     renderPage(id);
+  }
+  // 需求2：安卓硬件返回键应从「直接退出 app」改为「先关弹窗 / 再返回上一页」。
+  // 优先用 Capacitor 的 App 插件 backButton 事件（标准 Capacitor 应用默认注册 @capacitor/app），
+  // 注册后硬件返回键不再直接 finish()，交由本函数处理；根页面才调用 exitApp() 退出。
+  // 若运行在非 Capacitor 环境（浏览器/PWA），回退到 history.pushState 陷阱接管 popstate。
+  function onBack() {
+    const scope = document.querySelector('.scope-mask:not(.hidden)');
+    if (scope) { scope.remove(); return; }
+    const mask = document.getElementById('modalMask');
+    if (mask && !mask.classList.contains('hidden')) {
+      mask.classList.add('hidden');
+      const sp = document.getElementById('sentencePop'); if (sp) sp.classList.add('hidden');
+      return;
+    }
+    if (_pageStack.length) {
+      const prev = _pageStack.pop();
+      _suppressStack = true; goPage(prev); _suppressStack = false;
+      return;
+    }
+    // 已在根页面且无弹窗：退出 app（仅 Capacitor 环境调用 exitApp；浏览器/PWA 无操作）
+    if (window._capApp && window._capApp.exitApp) { try { window._capApp.exitApp(); } catch (e) {} }
+  }
+  function armBackNavigation() {
+    if (window._backArmed) return; window._backArmed = true;
+    const cap = window.Capacitor;
+    const capApp = cap && cap.Plugins && cap.Plugins.App;
+    if (capApp && capApp.addListener) {
+      window._capApp = capApp;
+      capApp.addListener('backButton', () => onBack());
+    } else {
+      history.pushState({ k: 'app-root' }, '');
+      window.addEventListener('popstate', onBack);
+    }
   }
   // 供原生层（桌面组件点 🐱）直接调用跳转：window.__goPage('english')
   window.__goPage = goPage;
@@ -895,6 +973,212 @@
     const f = store.customCats.find((x) => x.id === c);
     return f ? f.name : c;
   }
+  /* ================= 需求7：计划统计页 ================= */
+  let statsMode = 'week';        // week | month | year | custom
+  let statsAnchor = null;        // Date，用于 周/月/年 锚点
+  let statsCustStart = todayStr();
+  let statsCustEnd = todayStr();
+  let statsRingMode = 'pri';     // pri | cat
+  const STATS_PRI_COLOR = { p0: '#ff5a5f', p1: '#ffce3d', p2: '#3ddc84', p3: '#3d9bff' }; // 重要且紧急红/重要不紧急黄/紧急不重要绿/不重要不紧急蓝
+  const STATS_CAT_PALETTE = ['#3D9EF0', '#FF8A5B', '#9B6BFF', '#37C2A0', '#F2B705', '#E36CA0', '#6FD3FF', '#8BD450']; // 分类色板（系统分配）
+  function ensureStatsPage() {
+    if (document.querySelector('.page[data-page="stats"]')) return;
+    const sec = document.createElement('section');
+    sec.className = 'page hidden';
+    sec.dataset.page = 'stats';
+    sec.id = 'statsPage';
+    sec.innerHTML = `<div class="stats-head">
+      <div class="stats-tabs" id="statsTabs">
+        <button class="stab on" data-sm="week">周</button>
+        <button class="stab" data-sm="month">月</button>
+        <button class="stab" data-sm="year">年</button>
+        <button class="stab" data-sm="custom">自定义</button>
+      </div>
+      <div class="stats-switcher" id="statsSwitcher"></div>
+      <div class="stats-box"><div class="stats-summary" id="statsSummary"></div></div>
+      <div class="stats-box">
+        <div class="stats-ring-tabs" id="statsRingTabs">
+          <button class="srt on" data-sr="pri">优先级</button>
+          <button class="srt" data-sr="cat">分类</button>
+        </div>
+        <div class="stats-ring-wrap" id="statsRingWrap"></div>
+        <div class="stats-legend" id="statsLegend"></div>
+      </div>
+    </div>`;
+    const scroll = document.getElementById('scroll');
+    if (scroll) scroll.appendChild(sec);
+  }
+  // 取当前模式下的日期区间（含「未来日期不计入统计」的收敛：当前周/月/年只统计到今天）
+  function statsDates() {
+    const today = todayStr();
+    if (statsMode === 'custom') {
+      const out = []; let cur = new Date(statsCustStart + 'T00:00:00'); let end = new Date(statsCustEnd + 'T00:00:00');
+      if (cur > end) { const t = cur; cur = end; end = t; }
+      while (cur <= end) { out.push(dateKey(cur)); cur.setDate(cur.getDate() + 1); }
+      return out;
+    }
+    if (statsMode === 'year') {
+      const y = (statsAnchor || new Date()).getFullYear(); const isCur = y === new Date().getFullYear();
+      const out = []; const cur = new Date(y, 0, 1); const end = new Date(y, 11, 31);
+      while (cur <= end) { const k = dateKey(cur); if (isCur && k > today) break; out.push(k); cur.setDate(cur.getDate() + 1); }
+      return out;
+    }
+    if (statsMode === 'month') {
+      const base = statsAnchor || new Date(); const y = base.getFullYear(), m = base.getMonth();
+      const isCur = (y === new Date().getFullYear() && m === new Date().getMonth());
+      const last = new Date(y, m + 1, 0); const out = [];
+      for (let x = new Date(y, m, 1); x <= last; x.setDate(x.getDate() + 1)) { const k = dateKey(new Date(x)); if (isCur && k > today) break; out.push(k); }
+      return out;
+    }
+    // week
+    const base = statsAnchor || new Date(); const d = new Date(base);
+    const dow = d.getDay(); const diff = (dow === 0 ? 6 : dow - 1);
+    const mon = new Date(d); mon.setDate(d.getDate() - diff);
+    const isCur = weekKey(mon) === weekKey(new Date());
+    const out = [];
+    for (let i = 0; i < 7; i++) { const x = new Date(mon); x.setDate(mon.getDate() + i); const k = dateKey(x); if (isCur && k > today) break; out.push(k); }
+    return out;
+  }
+  function statsCompute(dates) {
+    let total = 0, done = 0, overdue = 0;
+    const today = todayStr();
+    const doneByPri = { p0: 0, p1: 0, p2: 0, p3: 0 };
+    const doneByCat = {};
+    dates.forEach((ds) => {
+      effTasks(ds).forEach((t) => {
+        total++;
+        if (t.done) {
+          done++;
+          doneByPri[t.pri] = (doneByPri[t.pri] || 0) + 1;
+          const cl = catLabel(t.cat); doneByCat[cl] = (doneByCat[cl] || 0) + 1;
+        } else if (ds < today) overdue++;
+      });
+    });
+    return { total, done, overdue, rate: total ? Math.round(done / total * 100) : 0, doneByPri, doneByCat };
+  }
+  function renderStatsSwitcher(sec) {
+    const host = sec.querySelector('#statsSwitcher');
+    if (statsMode === 'custom') {
+      host.className = 'stats-cust';
+      host.innerHTML = '<span>从</span><input type="date" id="csStart" value="' + statsCustStart + '"><span>到</span><input type="date" id="csEnd" value="' + statsCustEnd + '">';
+      const upd = () => { statsCustStart = sec.querySelector('#csStart').value || todayStr(); statsCustEnd = sec.querySelector('#csEnd').value || todayStr(); renderStats(); };
+      host.querySelector('#csStart').onchange = upd;
+      host.querySelector('#csEnd').onchange = upd;
+      return;
+    }
+    host.className = 'stats-switcher';
+    let label, prev, next, pick;
+    if (statsMode === 'week') {
+      const base = statsAnchor || new Date(); const d = new Date(base);
+      const dow = d.getDay(); const diff = (dow === 0 ? 6 : dow - 1);
+      const mon = new Date(d); mon.setDate(d.getDate() - diff);
+      label = weekKey(mon);
+      prev = () => { statsAnchor = addDays(statsAnchor || new Date(), -7); renderStats(); };
+      next = () => { statsAnchor = addDays(statsAnchor || new Date(), 7); renderStats(); };
+      pick = () => openStatsWeekPicker();
+    } else if (statsMode === 'month') {
+      label = monthKey(statsAnchor || new Date());
+      prev = () => { statsAnchor = addMonths(statsAnchor || new Date(), -1); renderStats(); };
+      next = () => { statsAnchor = addMonths(statsAnchor || new Date(), 1); renderStats(); };
+      pick = () => openStatsMonthPicker();
+    } else {
+      label = (statsAnchor || new Date()).getFullYear() + '年';
+      prev = () => { const a = statsAnchor || new Date(); statsAnchor = new Date(a.getFullYear() - 1, 0, 1); renderStats(); };
+      next = () => { const a = statsAnchor || new Date(); statsAnchor = new Date(a.getFullYear() + 1, 0, 1); renderStats(); };
+      pick = () => openStatsYearPicker();
+    }
+    host.innerHTML = `<button class="ss-arrow" data-ss="prev">◀</button><button class="ss-pick" data-sspick>${label}</button><button class="ss-arrow" data-ss="next">▶</button>`;
+    host.querySelector('[data-ss="prev"]').onclick = prev;
+    host.querySelector('[data-ss="next"]').onclick = next;
+    host.querySelector('[data-sspick]').onclick = pick;
+  }
+  function renderStatsSummary(sec, c) {
+    sec.querySelector('#statsSummary').innerHTML = `
+      <div class="stat-cell"><div class="sc-n">${c.done}</div><div class="sc-l">已完成</div></div>
+      <div class="stat-cell"><div class="sc-n">${c.total}</div><div class="sc-l">应完成</div></div>
+      <div class="stat-cell"><div class="sc-n">${c.overdue}</div><div class="sc-l">已逾期</div></div>
+      <div class="stat-cell"><div class="sc-n">${c.rate}%</div><div class="sc-l">完成率</div></div>`;
+  }
+  function renderStatsRing(sec, c) {
+    const wrap = sec.querySelector('#statsRingWrap');
+    const legend = sec.querySelector('#statsLegend');
+    let segs;
+    if (statsRingMode === 'pri') {
+      const order = ['p0', 'p1', 'p2', 'p3'];
+      segs = order.map((k) => ({ color: STATS_PRI_COLOR[k], label: PRI_LABEL[k], n: c.doneByPri[k] || 0 }));
+    } else {
+      const entries = Object.keys(c.doneByCat).map((k) => ({ label: k, n: c.doneByCat[k] }));
+      segs = entries.map((e, i) => ({ color: STATS_CAT_PALETTE[i % STATS_CAT_PALETTE.length], label: e.label, n: e.n }));
+    }
+    const sum = segs.reduce((s, x) => s + x.n, 0);
+    let acc = 0; const stops = [];
+    if (sum > 0) {
+      segs.forEach((s) => { const pct = s.n / sum * 100; if (pct > 0) { stops.push(s.color + ' ' + acc.toFixed(2) + '% ' + (acc + pct).toFixed(2) + '%'); acc += pct; } });
+    } else {
+      stops.push('#eceff3 0% 100%');
+    }
+    wrap.innerHTML = `<div class="ring" style="background:conic-gradient(${stops.join(',')})"><div class="ring-hole"><div class="rh-l">完成计划</div><div class="rh-n">${c.done}个</div></div></div>`;
+    legend.innerHTML = sum > 0
+      ? segs.map((s) => { const pct = sum > 0 ? Math.round(s.n / sum * 100) : 0; return `<div class="legend-row"><span class="legend-dot" style="background:${s.color}"></span><span class="lg-n">${esc(s.label)}</span><span class="lg-p">${s.n}个 ${pct}%</span></div>`; }).join('')
+      : '<div class="legend-row" style="color:#aaa">该时段暂无已完成计划</div>';
+  }
+  function renderStats() {
+    ensureStatsPage();
+    const sec = document.getElementById('statsPage');
+    if (!sec) return;
+    injectUiStyle();
+    const tabs = sec.querySelector('#statsTabs');
+    tabs.querySelectorAll('.stab').forEach((b) => b.classList.toggle('on', b.dataset.sm === statsMode));
+    tabs.onclick = (e) => { const b = e.target.closest('.stab'); if (!b) return; statsMode = b.dataset.sm; statsAnchor = null; renderStats(); };
+    const rtabs = sec.querySelector('#statsRingTabs');
+    rtabs.querySelectorAll('.srt').forEach((b) => b.classList.toggle('on', b.dataset.sr === statsRingMode));
+    rtabs.onclick = (e) => { const b = e.target.closest('.srt'); if (!b) return; statsRingMode = b.dataset.sr; renderStats(); };
+    renderStatsSwitcher(sec);
+    const dates = statsDates();
+    const c = statsCompute(dates);
+    renderStatsSummary(sec, c);
+    renderStatsRing(sec, c);
+  }
+  // 周/月/年 选择器（复用复盘页弹窗样式；点击中心文字弹出，与复盘页一致）
+  function openStatsWeekPicker() {
+    let y = (statsAnchor || new Date()).getFullYear();
+    openModal('📅 选择周', `<div id="wkPick"><div class="yp-head"><button class="cal-arrow" data-yp="-1">◀</button><span class="yp-y">${y}</span><button class="cal-arrow" data-yp="1">▶</button></div><div class="wk-grid" id="wkGrid"></div></div>`);
+    const render = () => {
+      const host = $('#wkGrid'); const mondays = yearWeeks(y); const curK = weekKey(statsAnchor || new Date());
+      host.innerHTML = mondays.map((d) => { const k = weekKey(d); const on = k === curK; return `<button class="wk-cell ${on ? 'on' : ''}" data-wk="${dateKey(d)}">${k.replace(y + ' ', '')}</button>`; }).join('');
+      host.querySelectorAll('.wk-cell').forEach((b) => b.onclick = () => { statsAnchor = new Date(b.dataset.wk + 'T00:00:00'); const mask = $('#modalMask'); if (mask) mask.classList.add('hidden'); renderStats(); });
+    };
+    render();
+    const head = $('#wkPick');
+    head.querySelector('[data-yp="-1"]').onclick = () => { y--; head.querySelector('.yp-y').textContent = y; render(); };
+    head.querySelector('[data-yp="1"]').onclick = () => { y++; head.querySelector('.yp-y').textContent = y; render(); };
+  }
+  function openStatsMonthPicker() {
+    let y = (statsAnchor || new Date()).getFullYear();
+    openModal('📅 选择月', `<div id="moPick"><div class="yp-head"><button class="cal-arrow" data-yp="-1">◀</button><span class="yp-y">${y}</span><button class="cal-arrow" data-yp="1">▶</button></div><div class="mo-grid" id="moGrid"></div></div>`);
+    const render = () => {
+      const host = $('#moGrid'); const cur = new Date(); const maxM = (y === cur.getFullYear()) ? cur.getMonth() + 1 : 12; const onK = monthKey(statsAnchor || new Date());
+      host.innerHTML = Array.from({ length: maxM }, (_, i) => { const m = i + 1; const k = y + '年' + m + '月'; const on = k === onK; return `<button class="mo-cell ${on ? 'on' : ''}" data-m="${m}">${m}月</button>`; }).join('');
+      host.querySelectorAll('.mo-cell').forEach((b) => b.onclick = () => { statsAnchor = new Date(y, (+b.dataset.m) - 1, 15); const mask = $('#modalMask'); if (mask) mask.classList.add('hidden'); renderStats(); });
+    };
+    render();
+    const head = $('#moPick');
+    head.querySelector('[data-yp="-1"]').onclick = () => { y--; head.querySelector('.yp-y').textContent = y; render(); };
+    head.querySelector('[data-yp="1"]').onclick = () => { y++; head.querySelector('.yp-y').textContent = y; render(); };
+  }
+  function openStatsYearPicker() {
+    const curY = new Date().getFullYear(); let y = (statsAnchor || new Date()).getFullYear();
+    openModal('📅 选择年', `<div id="yrPick"><div class="yp-head"><button class="cal-arrow" data-yp="-1">◀</button><span class="yp-y">${y}</span><button class="cal-arrow" data-yp="1">▶</button></div><div class="yr-grid" id="yrGrid"></div></div>`);
+    const render = () => {
+      const host = $('#yrGrid');
+      host.innerHTML = Array.from({ length: 9 }, (_, i) => { const yy = curY - 4 + i; const on = yy === y; return `<button class="yr-cell ${on ? 'on' : ''}" data-y="${yy}">${yy}年</button>`; }).join('');
+      host.querySelectorAll('.yr-cell').forEach((b) => b.onclick = () => { statsAnchor = new Date(+b.dataset.y, 0, 1); const mask = $('#modalMask'); if (mask) mask.classList.add('hidden'); renderStats(); });
+    };
+    render();
+    const head = $('#yrPick');
+    head.querySelector('[data-yp="-1"]').onclick = () => { y--; head.querySelector('.yp-y').textContent = y; render(); };
+    head.querySelector('[data-yp="1"]').onclick = () => { y++; head.querySelector('.yp-y').textContent = y; render(); };
+  }
   function renderPlan() {
     if (!planDate) planDate = todayStr();
     if (planDate === todayStr() && !store.plan[planDate]) {
@@ -947,6 +1231,15 @@
     const unfinBtn = document.getElementById('planUnfin');
     if (pfRow && unfinBtn && unfinBtn.parentElement !== pfRow) {
       pfRow.appendChild(unfinBtn); // 同一 DOM 节点重复 appendChild 不会重复，天然幂等
+    }
+    // 需求7：在 ⚠️ 右侧加 📊 统计入口按钮（紧邻 ⚠️，用固定小间距，不漂移）
+    if (pfRow && !document.getElementById('planStats')) {
+      const sb2 = document.createElement('button');
+      sb2.id = 'planStats'; sb2.className = 'plan-statbtn'; sb2.textContent = '📊';
+      sb2.title = '计划统计';
+      if (unfinBtn && unfinBtn.parentElement === pfRow) pfRow.insertBefore(sb2, unfinBtn.nextSibling);
+      else pfRow.appendChild(sb2);
+      sb2.onclick = () => goPage('stats');
     }
     const phRight = document.querySelector('.ph-right');
     const phRing = document.querySelector('.ph-ring');
@@ -1280,17 +1573,43 @@
       const t = store.planTpl.find((x) => x.id === item.tplId);
       if (!t) { store.planHide[item.id] = true; save(); renderPlan(); return; }   // 模板已不在，直接隐藏该天实例
       if (tplIsMultiDay(t)) { openDeleteDialog(t.id, item.date, () => { renderPlan(); }); return; }
-      // 单天模板：直接删整段（不弹窗）
-      store.planTpl = store.planTpl.filter((x) => x.id !== item.tplId);
-      Object.keys(store.planDone).forEach((k) => { if (k === item.tplId || k.indexOf(item.tplId + '@') === 0) delete store.planDone[k]; });
-      if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planOverride[k]; });
-      if (store.planOverrideFrom) delete store.planOverrideFrom[item.tplId];
-      if (store.planHide) Object.keys(store.planHide).forEach((k) => { if (k.indexOf(item.tplId + '@') === 0) delete store.planHide[k]; });
-      if (store.planHideFrom) delete store.planHideFrom[item.tplId];
-    } else {
-      store.plan[item.date] = (store.plan[item.date] || []).filter((x) => x.id !== item.id);
+      // 非重复计划（单天 或 跨天）：弹「确认删除」弹窗（需求4/5，防手误；跨天提示将删除所有天）
+      openConfirmDeleteDialog(item, () => { renderPlan(); });
+      return;
     }
-    save(); renderPlan();
+    // 普通单天任务：弹「确认删除」弹窗（需求4）
+    openConfirmDeleteDialog(item, () => { renderPlan(); });
+  }
+  // 需求4/5：非重复计划的删除确认弹窗（单天 / 跨天均走这个，不用重复计划的作用范围弹窗）
+  function openConfirmDeleteDialog(item, onClose) {
+    injectUiStyle();
+    const isTpl = !!item.tplId;
+    const m = document.createElement('div');
+    m.className = 'scope-mask';
+    m.innerHTML = `<div class="scope-card">
+      <h3>删除计划</h3>
+      <div class="pm-scope-tip ${isTpl ? 'warn' : ''}">确定要删除「${esc(item.text)}」吗？${isTpl ? '该计划在所有日期都会被删除，删除后需重新添加。' : '删除后需重新添加。'}</div>
+      <div class="pm-actions"><button class="pm-cancel" id="cdCancel">取消</button><button class="pm-save pm-delbtn" id="cdOk">删除</button></div>
+    </div>`;
+    document.body.appendChild(m);
+    m.querySelector('#cdCancel').onclick = () => { m.remove(); };
+    m.querySelector('#cdOk').onclick = () => {
+      m.remove();
+      if (isTpl) {
+        const tid = item.tplId;
+        store.planTpl = store.planTpl.filter((x) => x.id !== tid);
+        Object.keys(store.planDone || {}).forEach((k) => { if (k === tid || k.indexOf(tid + '@') === 0) delete store.planDone[k]; });
+        if (store.planOverride) Object.keys(store.planOverride).forEach((k) => { if (k.indexOf(tid + '@') === 0) delete store.planOverride[k]; });
+        if (store.planOverrideFrom) delete store.planOverrideFrom[tid];
+        if (store.planHide) Object.keys(store.planHide).forEach((k) => { if (k.indexOf(tid + '@') === 0) delete store.planHide[k]; });
+        if (store.planHideFrom) delete store.planHideFrom[tid];
+      } else {
+        store.plan[item.date] = (store.plan[item.date] || []).filter((x) => x.id !== item.id);
+      }
+      save(); renderPlan();
+      onClose && onClose();
+    };
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
   }
   function addTask() {
     const inp = $('#taskInput');
@@ -1624,13 +1943,23 @@
 
   /* —— 重复计划「改某天的内容/备注」作用范围 —— */
   // 判断模板是否跨多天（决定是否弹范围选择）
+  // 仅「重复计划」才弹出「作用范围」弹窗。跨天（有 dateEnd）但「不重复」的计划视为一个整体计划，
+  // 删除/修改都直接作用于全部天（见需求5/6），不再误用重复计划弹窗。
   function tplIsMultiDay(tpl) {
-    if (tpl.dateEnd && tpl.dateEnd !== tpl.date) return true;          // 跨天区间
-    if (!tpl.repeat || tpl.repeat.type === 'none') return false;       // 单天无重复
-    let cnt = 0, cur = tpl.date, g = 0;
+    if (!tpl.repeat || !tpl.repeat.type || tpl.repeat.type === 'none') return false;   // 单天 / 跨天（不重复）均不弹范围弹窗
+    let occ = 0, cum = 0, cur = tpl.date, g = 0;
     const end = (tpl.repeat.stop && tpl.repeat.stop.type === 'date') ? tpl.repeat.stop.date : shiftDay(tpl.date, 365 * 6);
-    while (cur <= end && g++ < 4000) { if (baseMatch(tpl, cur)) { cnt++; if (cnt > 1) return true; } cur = shiftDay(cur, 1); }
-    return cnt > 1;
+    const cntStop = (tpl.repeat.stop && tpl.repeat.stop.type === 'count') ? tpl.repeat.stop.n : Infinity;
+    while (cur <= end && g++ < 4000) {
+      if (baseMatch(tpl, cur)) {                 // 仅真实命中的日子计入（尊重 stop.count 限制）
+        cum++;
+        if (cum > cntStop) break;                // 超过次数上限后该天不再实际出现
+        occ++;
+        if (occ > 1) return true;
+      }
+      cur = shiftDay(cur, 1);
+    }
+    return occ > 1;
   }
   // 按所选范围落库：day=仅当天；since=当天及以后；all=整个重复周期（清掉该模板所有覆盖）
   function applyScope(tplId, ds, newVals, scope) {
@@ -1752,7 +2081,7 @@
         <div class="pm-cat-btns" id="dtCatBtns">${catList.map(([v,l,isC])=>`<button data-cat="${v}" class="pcat ${v===item.cat?'on':''}${isC?' custom-cat':''}">${l}${isC?`<span class="pcat-del" data-cdel="${v}">✕</span>`:''}</button>`).join('')}</div>
         ${item.tplId ? '<button class="pm-save2" id="dtTime">⏰ 修改时间 / 重复</button>' : ''}
         <label class="pm-l">备注</label>
-        <textarea id="dtNote" rows="2" placeholder="可选备注…">${esc(item.note || '')}</textarea>
+        <textarea id="dtNote" rows="3" placeholder="可选备注…">${esc(item.note || '')}</textarea>
         <div class="pm-actions">
           <button class="pm-cancel" id="dtCancel">取消</button>
           ${item.tplId ? '<button class="pm-hide" id="dtHide">仅隐藏今天</button>' : ''}
@@ -1761,6 +2090,13 @@
         </div>
       </div>`);
     const mask = document.getElementById('modalMask');
+    // 需求1：备注框高度自适应——无备注/≤3 行给固定 3 行高度；超过则自动拉长，文字多高框多高，不内滚
+    const dtNote = $('#dtNote');
+    if (dtNote) {
+      const growNote = () => { dtNote.style.height = 'auto'; dtNote.style.height = Math.max(dtNote.scrollHeight, 64) + 'px'; };
+      growNote();
+      dtNote.addEventListener('input', growNote);
+    }
     let dtPri = item.pri;
     $m('#dtPriBtns').onclick = (e) => { const b = e.target.closest('.ppri'); if (!b) return; dtPri = b.dataset.pri; $$m('#dtPriBtns .ppri').forEach((x)=>x.classList.toggle('on',x.dataset.pri===dtPri)); };
     let dtCat = item.cat;
@@ -1792,7 +2128,13 @@
         if (tplIsMultiDay(t)) {
           openScopeDialog(t.id, item.date, newVals, () => { mask.classList.add('hidden'); renderPlan(); });
         } else {
-          Object.assign(t, newVals); save(); mask.classList.add('hidden'); renderPlan(); toast('已保存');
+          // 非重复（单天 / 跨天）：直接修改整段模板（跨天→每一天都被改，需求6：不弹任何弹窗）
+          // 同时清掉该模板可能残留的按天覆盖/隐藏，保证整段统一更新
+          Object.assign(t, newVals);
+          if (store.planOverride) delete store.planOverride[t.id + '@' + item.date];
+          if (store.planOverrideFrom) delete store.planOverrideFrom[t.id];
+          if (store.planHideFrom) delete store.planHideFrom[t.id];
+          save(); mask.classList.add('hidden'); renderPlan(); toast('已保存');
         }
       } else {
         const t = (store.plan[item.date] || []).find((x) => x.id === item.id);
@@ -4574,13 +4916,15 @@
     ({
       home: renderHome, plan: renderPlan, english: renderEnglish, math: renderMath,
       major: renderMajor, life: renderLife, week: renderWeek,
-      month: renderMonth, setting: renderSetting
+      month: renderMonth, setting: renderSetting, stats: renderStats
     })[id]();
   }
   function renderAll() {
     buildSidebar(); refreshModeChip(); tickCountdown();
     // 顶部模式 chip 点击
     $('#modeChip').onclick = () => { goPage('setting'); };
+    armBackNavigation();   // 需求2：接管安卓硬件返回键
+    ensureStatsPage();     // 需求7：预建统计页节点（动态注入，避免改动 index.html）
     renderPage(curPage);
   }
 
