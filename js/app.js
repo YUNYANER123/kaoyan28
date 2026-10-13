@@ -661,7 +661,7 @@
     st.textContent = `
 .pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
 .pm-time-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px}
-.pm-timebtn{flex:1 1 0;min-width:0;font-size:13px;padding:9px 10px;border:1px solid rgba(46,144,232,.3);border-radius:10px;background:#fff;color:#2F80ED;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-timebtn{flex:0 0 auto;min-width:92px;font-size:13px;padding:9px 12px;border:1px solid rgba(0,0,0,.14);border-radius:10px;background:#fff;color:#9aa0a6;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pm-timebtn.has-val{color:#222}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
 .ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}
@@ -699,11 +699,11 @@
 .ring-hole{position:absolute;inset:20px;background:#fff;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .ring-hole .rh-l{font-size:13px;color:#7a7a7a}
 .ring-hole .rh-n{font-size:22px;font-weight:900;color:#222}
-.stats-legend{margin-top:12px;display:flex;flex-direction:column;gap:7px}
-.legend-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#444}
-.legend-dot{width:12px;height:12px;border-radius:3px;flex:0 0 auto}
-.legend-row .lg-n{font-weight:700}
-.legend-row .lg-p{margin-left:auto;color:#888}
+.stats-legend{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.legend-row{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:8px;font-size:13px;color:#444;text-align:center}
+.legend-row .lg-n{font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
+.legend-dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.legend-row .lg-c,.legend-row .lg-p{color:#888}
 .scope-card .pm-scope-tip.warn{color:#c0392b}
 .yr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .yr-cell{padding:10px 0;border-radius:10px;border:1px solid rgba(46,144,232,.25);background:#fff;color:#2F80ED;font-weight:800;cursor:pointer}
@@ -1130,7 +1130,7 @@
     }
     wrap.innerHTML = `<div class="ring" style="background:conic-gradient(${stops.join(',')})"><div class="ring-hole"><div class="rh-l">完成计划</div><div class="rh-n">${c.done}个</div></div></div>`;
     legend.innerHTML = sum > 0
-      ? segs.map((s) => { const pct = sum > 0 ? Math.round(s.n / sum * 100) : 0; return `<div class="legend-row"><span class="legend-dot" style="background:${s.color}"></span><span class="lg-n">${esc(s.label)}</span><span class="lg-p">${s.n}个 ${pct}%</span></div>`; }).join('')
+      ? segs.map((s) => { const pct = sum > 0 ? Math.round(s.n / sum * 100) : 0; return `<div class="legend-row"><span class="lg-n"><span class="legend-dot" style="background:${s.color}"></span>${esc(s.label)}</span><span class="lg-c">${s.n}个</span><span class="lg-p">${pct}%</span></div>`; }).join('')
       : '<div class="legend-row" style="color:#aaa">该时段暂无已完成计划</div>';
   }
   function renderStats() {
@@ -1192,6 +1192,7 @@
     head.querySelector('[data-yp="1"]').onclick = () => { y++; head.querySelector('.yp-y').textContent = y; render(); };
   }
   function renderPlan() {
+    injectUiStyle();   // 确保 .plan-statbtn 等注入样式在首屏计划页即就位（否则📊按钮初始无背景，需进统计页返回后才显示）
     if (!planDate) planDate = todayStr();
     if (planDate === todayStr() && !store.plan[planDate]) {
       const y = new Date(); y.setDate(y.getDate() - 1);
