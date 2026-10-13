@@ -668,10 +668,11 @@
 /* 需求3：⚠️ 固定紧邻「已完成」按钮右侧，用固定小间距而非 margin-left:auto，避免随容器宽度漂移 */
 #planUnfin{margin-left:10px;align-self:center;flex:0 0 auto}
 /* 需求7：计划页 ⚠️ 右侧的 📊 统计入口按钮 */
-.plan-statbtn{margin-left:6px;align-self:center;flex:0 0 auto;width:30px;height:27px;border-radius:10px;border:none;background:rgba(46,144,232,.12);color:#2F80ED;font-size:15px;font-weight:900;cursor:pointer}
+.plan-statbtn{margin-left:6px;align-self:center;flex:0 0 auto;width:27px;height:27px;border-radius:10px;border:none;background:linear-gradient(135deg,#FFC98A,#FF9A6B);color:#fff;font-size:15px;font-weight:900;cursor:pointer;box-shadow:0 3px 9px rgba(232,140,70,.3);display:flex;align-items:center;justify-content:center}
 .plan-statbtn:active{transform:scale(.94)}
 /* 需求4：非重复计划「确认删除」弹窗的删除按钮（红） */
-.pm-delbtn{background:#ff5a5f;color:#fff;border:none}
+.pm-delbtn{background:#ffd1e0;color:#d14d7a;border:none;font-weight:800}
+.pm-del-tip{color:#e0457e}
 .pm-delbtn:active{transform:scale(.97)}
 /* 需求1：详情备注框高度自适应（最少 3 行，超出自动拉长，不内滚） */
 #dtNote{min-height:64px;overflow:hidden;resize:none}
@@ -718,7 +719,16 @@
 .pm-scope-ico{width:18px;height:18px;border-radius:50%;border:2px solid #bcd2ee;flex:0 0 auto;position:relative;box-sizing:border-box}
 .pm-scope.on .pm-scope-ico{border-color:#2F80ED}
 .pm-scope.on .pm-scope-ico:after{content:"";position:absolute;inset:3px;border-radius:50%;background:#2F80ED}
-.pm-scope-tx{font-size:14px;color:#222}`;
+.pm-scope-tx{font-size:14px;color:#222}
+/* 需求：筛选行 5 项（全部/未完成/已完成/⚠️/📊）等间距、不溢出、单行 */
+#planFilter{display:flex!important;align-items:center;gap:6px;flex-wrap:nowrap}
+#planFilter .chip{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;padding:6px 4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#planFilter #planUnfin,#planFilter #planStats{flex:0 0 auto}
+/* 统计页返回按钮 */
+.stats-topbar{display:flex;align-items:center;gap:8px;margin:6px 0 8px}
+.stats-topbar .stats-tabs{flex:1 1 auto;min-width:0;margin:0}
+.stats-back{flex:0 0 auto;width:30px;height:30px;border-radius:10px;border:none;background:rgba(46,144,232,.12);color:#2F80ED;font-size:16px;font-weight:900;cursor:pointer}
+.stats-back:active{transform:scale(.94)}`;
     document.head.appendChild(st);
   }
 
@@ -804,7 +814,7 @@
     $$('.nav-item').forEach((b) => b.classList.toggle('on', b.dataset.nav === id));
     $$('.page').forEach((p) => p.classList.toggle('hidden', p.dataset.page !== id));
     const nav = NAV_ITEMS.find((n) => n.id === id);
-    $('#pageTitle').textContent = nav.name;
+    $('#pageTitle').textContent = nav ? nav.name : (id === 'stats' ? '计划统计' : id);
     $('#pageSub').textContent = navSub(id);
     $('#scroll').scrollTop = 0;
     renderPage(id);
@@ -813,34 +823,32 @@
   // 优先用 Capacitor 的 App 插件 backButton 事件（标准 Capacitor 应用默认注册 @capacitor/app），
   // 注册后硬件返回键不再直接 finish()，交由本函数处理；根页面才调用 exitApp() 退出。
   // 若运行在非 Capacitor 环境（浏览器/PWA），回退到 history.pushState 陷阱接管 popstate。
-  function onBack() {
+  // 安卓硬件返回键：先关弹窗 / 再返回上一页；根页面才退出 app。
+  // 原生 MainActivity.onBackPressed 会调用 window.__onHwBack() 并据返回值决定是否 finish；
+  // 浏览器/PWA 则回退到 history.pushState 陷阱接管 popstate。
+  function handleBack() {
     const scope = document.querySelector('.scope-mask:not(.hidden)');
-    if (scope) { scope.remove(); return; }
+    if (scope) { scope.remove(); return 'stay'; }
     const mask = document.getElementById('modalMask');
     if (mask && !mask.classList.contains('hidden')) {
       mask.classList.add('hidden');
       const sp = document.getElementById('sentencePop'); if (sp) sp.classList.add('hidden');
-      return;
+      return 'stay';
     }
     if (_pageStack.length) {
       const prev = _pageStack.pop();
       _suppressStack = true; goPage(prev); _suppressStack = false;
-      return;
+      return 'stay';
     }
-    // 已在根页面且无弹窗：退出 app（仅 Capacitor 环境调用 exitApp；浏览器/PWA 无操作）
-    if (window._capApp && window._capApp.exitApp) { try { window._capApp.exitApp(); } catch (e) {} }
+    return 'exit';
   }
+  window.__onHwBack = handleBack;
+  function onBack() { handleBack(); }   // 供弹窗 × / 页面返回按钮调用
   function armBackNavigation() {
     if (window._backArmed) return; window._backArmed = true;
-    const cap = window.Capacitor;
-    const capApp = cap && cap.Plugins && cap.Plugins.App;
-    if (capApp && capApp.addListener) {
-      window._capApp = capApp;
-      capApp.addListener('backButton', () => onBack());
-    } else {
-      history.pushState({ k: 'app-root' }, '');
-      window.addEventListener('popstate', onBack);
-    }
+    // 浏览器/PWA：用 history 陷阱接管返回键（Capacitor 环境由原生 onBackPressed 调用 __onHwBack）
+    history.pushState({ k: 'app-root' }, '');
+    window.addEventListener('popstate', handleBack);
   }
   // 供原生层（桌面组件点 🐱）直接调用跳转：window.__goPage('english')
   window.__goPage = goPage;
@@ -988,11 +996,14 @@
     sec.dataset.page = 'stats';
     sec.id = 'statsPage';
     sec.innerHTML = `<div class="stats-head">
-      <div class="stats-tabs" id="statsTabs">
-        <button class="stab on" data-sm="week">周</button>
-        <button class="stab" data-sm="month">月</button>
-        <button class="stab" data-sm="year">年</button>
-        <button class="stab" data-sm="custom">自定义</button>
+      <div class="stats-topbar">
+        <button class="stats-back" id="statsBack" title="返回">✕</button>
+        <div class="stats-tabs" id="statsTabs">
+          <button class="stab on" data-sm="week">周</button>
+          <button class="stab" data-sm="month">月</button>
+          <button class="stab" data-sm="year">年</button>
+          <button class="stab" data-sm="custom">自定义</button>
+        </div>
       </div>
       <div class="stats-switcher" id="statsSwitcher"></div>
       <div class="stats-box"><div class="stats-summary" id="statsSummary"></div></div>
@@ -1127,6 +1138,7 @@
     const sec = document.getElementById('statsPage');
     if (!sec) return;
     injectUiStyle();
+    const backBtn = sec.querySelector('#statsBack'); if (backBtn) backBtn.onclick = onBack;
     const tabs = sec.querySelector('#statsTabs');
     tabs.querySelectorAll('.stab').forEach((b) => b.classList.toggle('on', b.dataset.sm === statsMode));
     tabs.onclick = (e) => { const b = e.target.closest('.stab'); if (!b) return; statsMode = b.dataset.sm; statsAnchor = null; renderStats(); };
@@ -1588,7 +1600,7 @@
     m.className = 'scope-mask';
     m.innerHTML = `<div class="scope-card">
       <h3>删除计划</h3>
-      <div class="pm-scope-tip ${isTpl ? 'warn' : ''}">确定要删除「${esc(item.text)}」吗？${isTpl ? '该计划在所有日期都会被删除，删除后需重新添加。' : '删除后需重新添加。'}</div>
+      <div class="pm-scope-tip pm-del-tip">确认要删除「${esc(item.text)}」吗？该计划将会被删除，删除后需重新添加。</div>
       <div class="pm-actions"><button class="pm-cancel" id="cdCancel">取消</button><button class="pm-save pm-delbtn" id="cdOk">删除</button></div>
     </div>`;
     document.body.appendChild(m);
