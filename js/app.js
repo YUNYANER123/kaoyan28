@@ -661,8 +661,8 @@
     st.textContent = `
 .pm-timemode{flex:0 0 auto;font-size:12px;font-weight:800;color:#2F80ED;background:rgba(47,128,237,.1);padding:4px 10px;border-radius:9px;white-space:nowrap}
 .pm-time-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px}
-.pm-timebtn{flex:0 0 auto;min-width:92px;font-size:13px;padding:9px 12px;border:1px solid rgba(0,0,0,.14);border-radius:10px;background:#fff;color:#9aa0a6;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pm-timebtn.has-val{color:#222}
+.pm-timebtn{flex:1 1 0;min-width:0;height:40px;border:none;border-radius:11px;background:rgba(46,144,232,.07);padding:0 10px;font-size:13.5px;font-weight:700;color:#757575;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-timebtn.has-val{color:#333}
 .pm-time-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;border:0;padding:0}
 .ph-date{flex-wrap:nowrap}.ph-l{flex:1 1 auto;min-width:160px}
 /* 需求3：⚠️ 固定紧邻「已完成」按钮右侧，用固定小间距而非 margin-left:auto，避免随容器宽度漂移 */
@@ -700,10 +700,10 @@
 .ring-hole .rh-l{font-size:13px;color:#7a7a7a}
 .ring-hole .rh-n{font-size:22px;font-weight:900;color:#222}
 .stats-legend{margin-top:12px;display:flex;flex-direction:column;gap:8px}
-.legend-row{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:8px;font-size:13px;color:#444;text-align:center}
-.legend-row .lg-n{font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
-.legend-dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
-.legend-row .lg-c,.legend-row .lg-p{color:#888}
+.legend-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,.75fr) minmax(0,.75fr);align-items:center;gap:6px;font-size:12.5px;color:#444;text-align:center}
+.legend-row .lg-n{font-weight:700;display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;overflow:hidden;min-width:0}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.legend-row .lg-c,.legend-row .lg-p{color:#888;white-space:nowrap}
 .scope-card .pm-scope-tip.warn{color:#c0392b}
 .yr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .yr-cell{padding:10px 0;border-radius:10px;border:1px solid rgba(46,144,232,.25);background:#fff;color:#2F80ED;font-weight:800;cursor:pointer}
@@ -1661,6 +1661,7 @@
         <div class="pm-row pm-time-row">
           <span id="pmTimeModeLabel" class="pm-timemode">不设置</span>
           <label class="pm-timebtn" id="pmTimeBtn" for="pmTime">开始时间</label>
+          <span class="pm-tilde">~</span>
           <label class="pm-timebtn" id="pmTimeEndBtn" for="pmTimeEnd">截止时间</label>
           <input type="time" id="pmTime" class="pm-time-hidden" value="${pf.time || ''}">
           <input type="time" id="pmTimeEnd" class="pm-time-hidden" value="${pf.timeEnd || ''}">
