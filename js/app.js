@@ -4698,7 +4698,7 @@
       <p class="hint">喵上岸是完全开源的考研备考工作台，欢迎 Star、提 Issue、一起共建 🐱</p>
       <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>我的 GitHub 主页</a>
       <a class="ext-link" href="https://github.com/YUNYANER123/kaoyan28" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
-      <a class="ext-link" href="https://kaoyan28.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
+      <a class="ext-link" href="https://miaoshangan.app.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
     return card;
   }
   function buildSettingTabs() {
@@ -4721,6 +4721,13 @@
     });
     setC.forEach((c) => pSet.appendChild(c));
     miaoC.forEach((c) => pMiao.appendChild(c));
+    // v1.49：用户要求「当前版本」移入喵上岸面板。若 index.html 已自带 #verLine 则不复建，避免重复。
+    if (!document.getElementById('verLine')) {
+      const vc = document.createElement('div'); vc.className = 'card';
+      vc.innerHTML = `<div class="card-t">📌 当前版本</div><div id="verLine">读取中…</div>`;
+      pMiao.insertBefore(vc, pMiao.firstChild);
+      showVersionLine();
+    }
     pMiao.appendChild(buildLinksCard());
     sec.appendChild(pSet); sec.appendChild(pMiao);
     bar.querySelectorAll('.tab').forEach((t) => { t.onclick = () => { store.setTab = t.dataset.t; save(); applySetTab(); }; });
