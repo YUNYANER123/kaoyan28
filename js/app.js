@@ -418,7 +418,7 @@
       } else if (x.timeMode && x.timeMode !== "none") {
         time = x.time || x.timeEnd || "";
       }
-      return { id: x.id, text: x.text, done: !!x.done, time };
+      return { id: x.id, text: x.disp || x.text, done: !!x.done, time };
     });
     plan.sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)
       || String(a.time || "~").localeCompare(String(b.time || "~")));
@@ -1507,10 +1507,18 @@
   }
 
   /* —— 定时/重复 任务 —— */
+  // 跨天计划：第一天计划名前加（开始）、最后一天加（截止）；其余天不变。仅用于展示，不改原始 text（搜索/编辑仍用原值）。
+  function planDispName(t, ds) {
+    if (t.tplId && t.dateStart && t.dateEnd && t.dateStart !== t.dateEnd) {
+      if (ds === t.dateStart) return '（开始）' + t.text;
+      if (ds === t.dateEnd) return '（截止）' + t.text;
+    }
+    return t.text;
+  }
   function effTasks(ds) {
     const out = [];
     (store.plan[ds] || []).forEach((t) => out.push({
-      id: t.id, text: t.text, pri: t.pri, cat: t.cat, done: !!t.done, carry: !!t.carry,
+      id: t.id, text: t.text, disp: t.text, pri: t.pri, cat: t.cat, done: !!t.done, carry: !!t.carry,
       tplId: null, date: ds, note: t.note || '', timeMode: 'none', time: '', timeEnd: '', repeat: null
     }));
     (store.planTpl || []).forEach((tpl) => {
@@ -1535,7 +1543,8 @@
         timeMode: tpl.timeMode || 'none', time: tpl.time || '', timeEnd: tpl.timeEnd || '', repeat: tpl.repeat || null,
         // 跨天计划：把起止日期带出来，列表里合并显示成「开始日期 开始时间 - 结束日期 结束时间」一条，
         // 而不是每天各显示一条「当天日期 时间段」。
-        dateStart: tpl.date || '', dateEnd: tpl.dateEnd || ''
+        dateStart: tpl.date || '', dateEnd: tpl.dateEnd || '',
+        disp: planDispName({ tplId: tpl.id, dateStart: tpl.date || '', dateEnd: tpl.dateEnd || '', text: ttext }, ds)
       });
     });
     // 按时间排序：无具体时间的排在前面；有时间的按「用于比较的时间」升序。
@@ -1667,7 +1676,7 @@
     return `<div class="task ${x.done ? 'done' : ''} ${pri}" data-id="${x.id}">
       <div class="tk-check ${x.done ? 'on' : ''}" data-act="check">${x.done ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 6"/></svg>' : ''}</div>
       <div class="tk-body" data-act="detail">
-        <div class="tk-text">${esc(x.text)}</div>
+        <div class="tk-text">${esc(x.disp || x.text)}</div>
         <div class="tk-meta">${meta}</div>
       </div>
       <div class="tk-act">
@@ -4696,9 +4705,10 @@
     card.innerHTML = `
       <div class="card-t">🌐 开源与社区</div>
       <p class="hint">喵上岸是完全开源的考研备考工作台，欢迎 Star、提 Issue、一起共建 🐱</p>
-      <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>我的 GitHub 主页</a>
-      <a class="ext-link" href="https://github.com/YUNYANER123/kaoyan28" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
-      <a class="ext-link" href="https://miaoshangan.app.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
+      <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>作者 GitHub 主页</a>
+      <a class="ext-link" href="https://github.com/YUNYANER123/miaoshangan-android01" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
+      <a class="ext-link" href="https://miaoshangan.app.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>
+      <a class="ext-link" href="https://yunyaner123.github.io/kaoyan28/" target="_blank" rel="noopener"><span class="el-ic">🌟</span>喵上岸 GitHub 链接</a>`;
     return card;
   }
   function buildSettingTabs() {
@@ -4721,15 +4731,24 @@
     });
     setC.forEach((c) => pSet.appendChild(c));
     miaoC.forEach((c) => pMiao.appendChild(c));
-    // v1.49：用户要求「当前版本」移入喵上岸面板。若 index.html 已自带 #verLine 则不复建，避免重复。
-    if (!document.getElementById('verLine')) {
-      const vc = document.createElement('div'); vc.className = 'card';
-      vc.innerHTML = `<div class="card-t">📌 当前版本</div><div id="verLine">读取中…</div>`;
-      pMiao.insertBefore(vc, pMiao.firstChild);
-      showVersionLine();
-    }
     pMiao.appendChild(buildLinksCard());
     sec.appendChild(pSet); sec.appendChild(pMiao);
+    // 当前版本卡：确保「喵上岸」面板里恰好只有一张，且一定含 #verLine（供 showVersionLine 填充）。
+    // 静态 index.html 若已自带「当前版本」卡（含 #verLine 或标题含「当前版本」）则保留；否则动态建一张；多余的一律删掉，避免重复板块。
+    // 必须在面板挂入 sec 之后查询，否则刚移动的卡片还未进入 sec 子树，会漏判而误建重复卡。
+    const verMatch = (c) => c.querySelector('#verLine') || /当前版本/.test(c.textContent);
+    const verCards = Array.from(sec.querySelectorAll(':scope > .set-panel .card')).filter(verMatch);
+    verCards.forEach((c, i) => { if (i > 0) c.remove(); });
+    let verCard = verCards[0];
+    if (!verCard) {
+      verCard = document.createElement('div'); verCard.className = 'card';
+      verCard.innerHTML = `<div class="card-t">📌 当前版本</div><div id="verLine">读取中…</div>`;
+      pMiao.insertBefore(verCard, pMiao.firstChild);
+    }
+    if (verCard && !verCard.querySelector('#verLine')) {
+      const v = document.createElement('div'); v.id = 'verLine'; v.textContent = '读取中…'; verCard.appendChild(v);
+    }
+    showVersionLine();
     bar.querySelectorAll('.tab').forEach((t) => { t.onclick = () => { store.setTab = t.dataset.t; save(); applySetTab(); }; });
     settingTabsBuilt = true;
   }
