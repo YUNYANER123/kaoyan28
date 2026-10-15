@@ -130,6 +130,9 @@
         majJudge: { easy: 0, hard: 5 },
         majShort: { easy: 0, hard: 3 },
       },
+      setTab: 'setting',            // 设置页顶部切换：setting | miao
+      memo: '',                    // 📝 备忘录（纯文本）
+      countdowns: [],              // 📆 倒数日：[{id,name,date}]
       majorData: {},               // {bookName: {points:[{t,c}], choice:[{q,o,k,s,src}], judge:[{q,a,s,src}], short:[{q,a,src}]}}
       aiBank: {},                  // AI 扩充题库 {key:[条目]}，英语/数学/专业课通用
       aiShown: {},                 // {key:{d,ids,seen}} 已展示过的条目，用于「刷完一轮才重复」
@@ -628,16 +631,15 @@
 .goal-done-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .emoji-rain{position:fixed;inset:0;z-index:99998;pointer-events:none;overflow:hidden}
 .emoji-rain span{position:absolute;top:-9%;will-change:transform;animation:efe-fall linear forwards}
-@keyframes efe-fall{to{transform:translateY(114vh) rotate(380deg);opacity:.15}}`;
+@keyframes efe-fall{to{transform:translateY(114vh) rotate(380deg);opacity:.15}}
+/* v1.48：庆祝条改为内联（单词卡下方、导航按钮上方），不再用 fixed 大横幅挡住单词/释义 */
+.goal-done-inline{display:block;margin:12px auto 2px;max-width:100%;background:linear-gradient(135deg,#2F80ED,#5AA9FF);color:#fff;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:16px;border:2px solid rgba(255,170,210,.9);box-shadow:0 8px 24px rgba(47,128,237,.4),0 0 0 3px rgba(255,150,200,.3);text-align:center;white-space:nowrap;opacity:0;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
+.goal-done-inline.show{opacity:1;transform:scale(1)}`;
     document.head.appendChild(st);
   }
   function celebrateGoalDone() {
     injectCelebrateStyle();
-    let b = document.getElementById('goalDoneBanner');
-    if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-banner'; document.body.appendChild(b); }
-    b.innerHTML = '🎉已完成今日<br>背诵单词目标！';
-    requestAnimationFrame(() => b.classList.add('show'));
-    setTimeout(() => b.classList.remove('show'), 2600);
+    // 满屏 🎉 下落（装饰用，pointer-events:none 不挡操作）
     const rain = document.createElement('div'); rain.className = 'emoji-rain';
     const EMO = ['💙', '🔵', '🩵', '🫐', '✨', '💗', '🌸', '🐱'];
     for (let i = 0; i < 64; i++) {
@@ -650,6 +652,16 @@
     }
     document.body.appendChild(rain);
     setTimeout(() => { if (rain.parentNode) rain.parentNode.removeChild(rain); }, 4400);
+    // 内联庆祝条：插到 #enWord 内、单词卡与导航按钮之间（在单词/释义/例句之下，上一个/显示释义/下一个之上）
+    const host = document.getElementById('enWord');
+    if (!host) return;
+    let b = document.getElementById('goalDoneBanner');
+    if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-inline'; }
+    b.innerHTML = '🎉已完成今日<br>背诵单词目标！';
+    const nav = host.querySelector('.word-nav');
+    if (nav) host.insertBefore(b, nav); else host.appendChild(b);
+    requestAnimationFrame(() => b.classList.add('show'));
+    setTimeout(() => { b.classList.remove('show'); }, 3200);
   }
 
   // 时间字段样式（仅模式标签）：注入一次，避免改动仓库 styles.css。
@@ -1254,6 +1266,16 @@
       else pfRow.appendChild(sb2);
       sb2.onclick = () => goPage('stats');
     }
+    // v1.48：筛选行末尾加 ⋮ 更多菜单（📝备忘录 / 📆倒数日）
+    if (pfRow && !document.getElementById('planMore')) {
+      const more = document.createElement('button');
+      more.id = 'planMore'; more.className = 'plan-statbtn'; more.textContent = '⋮';
+      more.title = '更多（备忘录 / 倒数日）';
+      const statsBtn = document.getElementById('planStats');
+      if (statsBtn && statsBtn.parentElement === pfRow) pfRow.insertBefore(more, statsBtn.nextSibling);
+      else pfRow.appendChild(more);
+      more.onclick = (e) => { e.stopPropagation(); togglePlanMore(); };
+    }
     const phRight = document.querySelector('.ph-right');
     const phRing = document.querySelector('.ph-ring');
     if (phRight && phRing && !document.getElementById('planSearch')) {
@@ -1279,6 +1301,98 @@
       ? `<div class="carry-t">⚠ 昨日未完成的 ${carry.length} 项已顺延到今天</div>` +
       carry.map((x) => `<div class="task ${x.done ? 'done' : ''} ${x.pri}"><div class="tk-body"><div class="tk-text">${esc(x.text)}</div><div class="tk-meta"><span class="tk-tag carry">顺延</span></div></div></div>`).join('')
       : '';
+  }
+
+  /* ============ v1.48：计划页 ⋮ 更多菜单（📝备忘录 / 📆倒数日） ============ */
+  let planMoreMenu = null;
+  function injectPlanMoreStyle() {
+    if (injectPlanMoreStyle._done) return; injectPlanMoreStyle._done = true;
+    const st = document.createElement('style');
+    st.textContent = `
+.pmore-menu{position:fixed;z-index:9999;background:#fff;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:132px}
+.pmore-menu button{display:flex;align-items:center;gap:8px;padding:10px 12px;border:none;background:#fff;border-radius:9px;color:#333;font-weight:700;font-size:14px;cursor:pointer;text-align:left}
+.pmore-menu button:active{background:rgba(46,144,232,.1)}
+.memo-area{width:100%;min-height:120px;padding:10px;font-size:14px;line-height:1.6;border:1px solid rgba(46,144,232,.3);border-radius:10px;resize:vertical;box-sizing:border-box;font-family:inherit}
+.cd-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.cd-name-in{flex:1 1 120px;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:13px}
+.cd-date-in{padding:7px 9px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:13px}
+.cd-list{display:flex;flex-direction:column;gap:8px}
+.cd-item{display:flex;align-items:center;gap:10px;background:rgba(46,144,232,.06);border-radius:12px;padding:10px 12px}
+.cd-item .cd-name{font-weight:800;font-size:14px;color:#222;flex:1 1 auto;min-width:0}
+.cd-item .cd-date{font-size:12px;color:#888}
+.cd-item .cd-days{font-size:13px;font-weight:700;color:#2F80ED;white-space:nowrap}
+.cd-item .cd-del{border:none;background:rgba(255,123,146,.16);color:#E5476A;font-weight:800;padding:5px 10px;border-radius:9px;cursor:pointer;flex:0 0 auto}`;
+    document.head.appendChild(st);
+  }
+  function daysBetween(a, b) {
+    const da = new Date(a + 'T00:00:00'), db = new Date(b + 'T00:00:00');
+    return Math.round((db - da) / 86400000);
+  }
+  function togglePlanMore() {
+    injectPlanMoreStyle();
+    if (!planMoreMenu) {
+      planMoreMenu = document.createElement('div');
+      planMoreMenu.id = 'planMoreMenu'; planMoreMenu.className = 'pmore-menu hidden';
+      planMoreMenu.innerHTML = `<button data-m="memo">📝 备忘录</button><button data-m="cd">📆 倒数日</button>`;
+      document.body.appendChild(planMoreMenu);
+      planMoreMenu.querySelector('[data-m="memo"]').onclick = () => { hidePlanMore(); openMemo(); };
+      planMoreMenu.querySelector('[data-m="cd"]').onclick = () => { hidePlanMore(); openCountdown(); };
+      document.addEventListener('click', onDocClickCloseMore);
+    }
+    const btn = document.getElementById('planMore');
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      planMoreMenu.style.top = (r.bottom + 6) + 'px';
+      planMoreMenu.style.left = Math.max(8, r.left - 132 + r.width) + 'px';
+    }
+    planMoreMenu.classList.toggle('hidden');
+  }
+  function hidePlanMore() { if (planMoreMenu) planMoreMenu.classList.add('hidden'); }
+  function onDocClickCloseMore(e) {
+    if (planMoreMenu && !planMoreMenu.classList.contains('hidden') && !planMoreMenu.contains(e.target) && e.target.id !== 'planMore') hidePlanMore();
+  }
+  function openMemo() {
+    const cur = store.memo || '';
+    openModal('📝 备忘录', `
+      <textarea id="memoArea" class="memo-area" placeholder="随手记点什么：今日感悟、待办灵感、易错点……">${esc(cur)}</textarea>
+      <div class="btn-row"><button class="gbtn" id="memoSave">保存</button></div>`);
+    const m = document.getElementById('modalMask');
+    if (!m) return;
+    m.querySelector('#memoSave').onclick = () => {
+      store.memo = m.querySelector('#memoArea').value; save();
+      m.classList.add('hidden'); toast('备忘录已保存');
+    };
+  }
+  function openCountdown() {
+    const render = () => {
+      const list = store.countdowns || [];
+      const items = list.length ? list.map((c, i) => {
+        const d = daysBetween(todayStr(), c.date);
+        const txt = d > 0 ? `还有 <b>${d}</b> 天` : (d < 0 ? `已过去 <b>${-d}</b> 天` : '就是今天 🎉');
+        return `<div class="cd-item"><div class="cd-name">${esc(c.name)}</div><div class="cd-date">${esc(c.date)}</div><div class="cd-days">${txt}</div><button class="cd-del" data-cd="${i}">删除</button></div>`;
+      }).join('') : '<div class="hint">还没有倒数日，添加一个吧～</div>';
+      openModal('📆 倒数日', `
+        <div class="cd-add">
+          <input id="cdName" class="cd-name-in" placeholder="事件名（如：考研初试）">
+          <input type="date" id="cdDate" class="cd-date-in">
+          <button class="gbtn" id="cdAdd">添加</button>
+        </div>
+        <div class="cd-list" id="cdList">${items}</div>`);
+      const m = document.getElementById('modalMask');
+      if (!m) return;
+      m.querySelector('#cdAdd').onclick = () => {
+        const name = m.querySelector('#cdName').value.trim();
+        const date = m.querySelector('#cdDate').value;
+        if (!name || !date) { toast('请填写事件名和日期'); return; }
+        store.countdowns = store.countdowns || [];
+        store.countdowns.push({ id: uid(), name, date }); save();
+        render();
+      };
+      m.querySelectorAll('[data-cd]').forEach((b) => b.onclick = () => {
+        const i = +b.dataset.cd; (store.countdowns || []).splice(i, 1); save(); render();
+      });
+    };
+    render();
   }
 
   /* —— ⚠ 以往未完成的计划（不含当天，可点击跳转到对应日期） —— */
@@ -2338,7 +2452,9 @@
         toast('已背 +1，累计 ' + totalWords() + ' 个 🎉', 'main');
         if (store.goals.word && d.en.wordCount >= store.goals.word && !d.en.wordGoalDone) {
           d.en.wordGoalDone = true; save();
-          celebrateGoalDone();
+          renderEnWord();        // 先重渲染，让 #enWord 处于最新状态
+          celebrateGoalDone();   // 再把庆祝条插到单词卡下方、导航按钮上方
+          return;                // 已 renderEnWord，避免下方重复渲染
         }
       } else toast('这个词已计入啦', 'main');
       renderEnWord();
@@ -4532,6 +4648,7 @@
 
   /* ================= 9. 设置 ================= */
   function renderSetting() {
+    buildSettingTabs();   // 幂等：首次构建 设置/喵上岸 顶部切换 + 把各卡片分组进两个面板
     const cards = [
       { id: 'easy', t: '前期轻松版', on: store.mode === 'easy' },
       { id: 'hard', t: '高强度备考版', on: store.mode === 'hard' },
@@ -4559,6 +4676,66 @@
     renderSubjectCard();
     renderCountCard();
     renderAiProxyCard();
+    applySetTab();   // 每次进入设置都按 store.setTab 校正可见面板
+  }
+  /* ============ 设置页顶部「设置 / 喵上岸」切换（样式仿数学页 今日题目/公式回忆） ============ */
+  let settingTabsBuilt = false;
+  function injectExtLinkStyle() {
+    if (injectExtLinkStyle._done) return; injectExtLinkStyle._done = true;
+    const st = document.createElement('style');
+    st.textContent = `
+.ext-link{display:flex;align-items:center;gap:8px;margin:8px 0;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,#2F80ED,#5AA9FF);color:#fff;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 12px rgba(47,128,237,.25)}
+.ext-link:active{transform:scale(.98)}
+.ext-link .el-ic{font-size:17px}`;
+    document.head.appendChild(st);
+  }
+  function buildLinksCard() {
+    injectExtLinkStyle();
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-t">🌐 开源与社区</div>
+      <p class="hint">喵上岸是完全开源的考研备考工作台，欢迎 Star、提 Issue、一起共建 🐱</p>
+      <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>我的 GitHub 主页</a>
+      <a class="ext-link" href="https://github.com/YUNYANER123/kaoyan28" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
+      <a class="ext-link" href="https://kaoyan28.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
+    return card;
+  }
+  function buildSettingTabs() {
+    if (settingTabsBuilt) return;
+    const sec = document.querySelector('[data-page="setting"]');
+    if (!sec) return;
+    // 该 section 直接子元素里的 .card，按内容分组
+    const cards = Array.from(sec.querySelectorAll(':scope > .card'));
+    const bar = document.createElement('div');
+    bar.className = 'tabs'; bar.setAttribute('data-tabs', 'settingTop');
+    const which = store.setTab === 'miao' ? 'miao' : 'setting';
+    bar.innerHTML = `<button class="tab ${which === 'setting' ? 'on' : ''}" data-t="setting">⚙️ 设置</button><button class="tab ${which === 'miao' ? 'on' : ''}" data-t="miao">🐱 喵上岸</button>`;
+    sec.insertBefore(bar, sec.firstChild);
+    const pSet = document.createElement('div'); pSet.className = 'set-panel'; pSet.dataset.panel = 'setting';
+    const pMiao = document.createElement('div'); pMiao.className = 'set-panel hidden'; pMiao.dataset.panel = 'miao';
+    const setC = [], miaoC = [];
+    cards.forEach((c) => {
+      if (c.querySelector('#verLine') || c.classList.contains('about')) miaoC.push(c);
+      else setC.push(c);
+    });
+    setC.forEach((c) => pSet.appendChild(c));
+    miaoC.forEach((c) => pMiao.appendChild(c));
+    pMiao.appendChild(buildLinksCard());
+    sec.appendChild(pSet); sec.appendChild(pMiao);
+    bar.querySelectorAll('.tab').forEach((t) => { t.onclick = () => { store.setTab = t.dataset.t; save(); applySetTab(); }; });
+    settingTabsBuilt = true;
+  }
+  function applySetTab() {
+    const sec = document.querySelector('[data-page="setting"]');
+    if (!sec) return;
+    const which = store.setTab === 'miao' ? 'miao' : 'setting';
+    const bar = sec.querySelector(':scope > .tabs[data-tabs="settingTop"]');
+    if (bar) bar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.t === which));
+    const pSet = sec.querySelector(':scope > .set-panel[data-panel="setting"]');
+    const pMiao = sec.querySelector(':scope > .set-panel[data-panel="miao"]');
+    if (pSet) pSet.classList.toggle('hidden', which !== 'setting');
+    if (pMiao) pMiao.classList.toggle('hidden', which !== 'miao');
   }
   // 学科自选卡片（英一/英二 · 数一/数二 · 专业课书目）
   function renderSubjectCard() {
