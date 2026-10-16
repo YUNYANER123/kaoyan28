@@ -1500,11 +1500,11 @@
 .emoji-rain{position:fixed;inset:0;z-index:99998;pointer-events:none;overflow:hidden}
 .emoji-rain span{position:absolute;top:-9%;will-change:transform;animation:efe-fall linear forwards}
 @keyframes efe-fall{to{transform:translateY(114vh) rotate(380deg);opacity:.15}}
-/* v1.53b：庆祝条改为「固定在视口顶部的浮层」，位于所有页面之上、不占文档流、不推挤内容、pointer-events:none 不挡下方按钮。
-   上移而非原地腾位：之前插在 .wc-today 前会把它下方内容整体下推，导致「显示释义」被压到屏外/被遮挡。
-   现在 position:fixed;top:0 始终浮在屏幕顶端，单词卡/导航按钮位置不变、始终可点。 */
-.goal-done-inline{position:fixed;top:0;left:0;right:0;z-index:99999;display:none;margin:8px auto 0;max-width:min(94%,560px);background:linear-gradient(135deg,#2F80ED,#FF7AB8);color:#fff;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:0 0 18px 18px;border:2px solid rgba(255,170,210,.9);border-top:none;box-shadow:0 8px 24px rgba(180,120,220,.4),0 0 0 3px rgba(255,150,200,.3);text-align:center;white-space:nowrap;opacity:0;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
-.goal-done-inline.show{display:block;opacity:1;transform:scale(1)}`;
+/* v1.53c：庆祝条 = 覆盖在「进度条(.wslider)+今日已背(.wc-today)」两行上方的浮层（用户截图红框位置）。
+   不写死 top:0（之前浮在屏幕最顶端太高）；位置由 celebrateGoalDone() 运行时按 .wslider 实测 rect 设置 top/left/width/minHeight。
+   配色同「开源与社区」四按钮：浅蓝→浅粉渐变底 + 深紫字；visibility 控制显隐，便于 flex 垂直居中、不占文档流。 */
+.goal-done-inline{position:fixed;z-index:99999;display:flex;align-items:center;justify-content:center;visibility:hidden;opacity:0;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:16px;border:2px solid rgba(255,170,210,.95);box-shadow:0 8px 24px rgba(180,120,220,.35),0 0 0 3px rgba(255,190,220,.4);text-align:center;white-space:nowrap;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
+.goal-done-inline.show{visibility:visible;opacity:1;transform:scale(1)}`;
     document.head.appendChild(st);
   }
   function celebrateGoalDone() {
@@ -1528,9 +1528,22 @@
     let b = document.getElementById('goalDoneBanner');
     if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-inline'; }
     b.innerHTML = '🎉已完成今日<br>背诵单词目标！';
-    // v1.53①：插到「今日已背xx个·累计已学xx个·目标xx个」(.wc-today) 之前，占据该位置、把它挡在下方
     const nav = host.querySelector('.wc-today');
     if (nav) host.insertBefore(b, nav); else host.appendChild(b);
+    // v1.53c：按用户截图红框——浮层精确覆盖「进度条(.wslider，含回到当前)+今日已背(.wc-today)」两行，
+    // 不写死 top:0（之前浮在屏幕最顶端太高）。用实测 rect 定位，适配不同机型/滚动位置。
+    const slider = host.querySelector('.wslider');
+    const todayRow = host.querySelector('.wc-today');
+    if (slider) {
+      const r = slider.getBoundingClientRect();
+      const t = (todayRow || slider).getBoundingClientRect();
+      b.style.left = r.left + 'px';
+      b.style.width = r.width + 'px';
+      b.style.top = r.top + 'px';
+      b.style.margin = '0';
+      b.style.maxWidth = 'none';
+      b.style.minHeight = Math.max(0, t.bottom - r.top) + 'px';
+    }
     requestAnimationFrame(() => b.classList.add('show'));
     setTimeout(() => { b.classList.remove('show'); }, 3200);
   }
@@ -2210,6 +2223,9 @@
 .memo-del{border:none;background:rgba(255,123,146,.16);color:#E5476A;font-weight:800;padding:3px 9px;border-radius:8px;cursor:pointer;font-size:12px}
 .memo-edit{width:100%;min-height:54px;padding:8px 10px;font-size:14px;line-height:1.5;border:1px solid rgba(46,144,232,.3);border-radius:10px;resize:vertical;box-sizing:border-box;font-family:inherit}
 .memo-add{display:flex;flex-direction:column;gap:8px}
+/* v1.53c：备忘录搜索框 */
+.memo-search{width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:13.5px;font-weight:600;margin-bottom:10px;outline:none;font-family:inherit;background:#fff}
+.memo-search:focus{border-color:#2F80ED}
 .memo-add #memoAddBtn{height:44px;flex:0 0 auto;font-size:14px;font-weight:800}
 .cd-card{display:flex;align-items:center;gap:10px;background:rgba(46,144,232,.06);border-radius:12px;padding:10px 12px}
 .cd-card-main{flex:1 1 auto;min-width:0;cursor:pointer}
@@ -2274,29 +2290,50 @@
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     injectPlanMoreStyle();
     let view = 'all';
+    let q = ''; // v1.53c：备忘录搜索关键词（跨文件夹）
     const render = () => {
       const folders = store.memoFolders || [];
       const memos = store.memos || [];
       const chips = [`<button class="mf-chip ${view === 'all' ? 'on' : ''}" data-f="all">全部</button>`]
         .concat(folders.map((f) => `<button class="mf-chip ${view === f.id ? 'on' : ''}" data-f="${f.id}">${esc(f.name)}</button>`))
         .concat(`<button class="mf-chip add" data-f="__new">＋新建</button>`);
-      const shown = view === 'all' ? memos : memos.filter((x) => x.folderId === view);
-      const items = shown.length ? shown.map((x) => {
-        const f = (store.memoFolders || []).find((y) => y.id === x.folderId);
-        return `<div class="memo-card">
-          <div class="memo-top"><span class="memo-folder">📁 ${esc(f ? f.name : '')}</span><button class="memo-del" data-id="${x.id}">删除</button></div>
-          <textarea class="memo-edit" data-id="${x.id}" placeholder="写点什么…">${esc(x.text)}</textarea>
-        </div>`;
-      }).join('') : '<div class="hint">这个文件夹还没有备忘，下面添加一条吧～</div>';
       const addHint = view === 'all' ? '（存入「默认文件夹」）' : `（存入「${(folders.find((f) => f.id === view) || {}).name || ''}」）`;
       openModal('📝 备忘录', `
         <div class="mf-chips">${chips}</div>
-        <div class="memo-list" id="memoList">${items}</div>
+        <input id="memoSearch" class="memo-search" placeholder="🔍 搜索备忘录关键词（跨文件夹）" value="${esc(q)}">
+        <div class="memo-list" id="memoList"></div>
         <div class="memo-add">
           <textarea id="memoNew" class="memo-edit" placeholder="新备忘 ${addHint}"></textarea>
           <button class="gbtn" id="memoAddBtn">添加</button>
         </div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
+      // v1.53c：备忘录关键词搜索（跨文件夹）——只重绘列表，不重建搜索框、不打断输入
+      const drawList = () => {
+        const all = store.memos || [];
+        const kw = q.trim().toLowerCase();
+        const shown2 = kw ? all.filter((x) => (x.text || '').toLowerCase().includes(kw))
+          : (view === 'all' ? all : all.filter((x) => x.folderId === view));
+        const listEl = m.querySelector('#memoList');
+        listEl.innerHTML = shown2.length ? shown2.map((x) => {
+          const f = (store.memoFolders || []).find((y) => y.id === x.folderId);
+          return `<div class="memo-card">
+          <div class="memo-top"><span class="memo-folder">📁 ${esc(f ? f.name : '')}</span><button class="memo-del" data-id="${x.id}">删除</button></div>
+          <textarea class="memo-edit" data-id="${x.id}" placeholder="写点什么…">${esc(x.text)}</textarea>
+        </div>`;
+        }).join('') : `<div class="hint">${kw ? '没有匹配「' + esc(q.trim()) + '」的备忘' : '这个文件夹还没有备忘，下面添加一条吧～'}</div>`;
+        // 实时保存已有备忘
+        listEl.querySelectorAll('.memo-edit[data-id]').forEach((t) => {
+          t.oninput = () => { const id = t.dataset.id; const it = (store.memos || []).find((x) => x.id === id); if (it) { it.text = t.value; save(); } };
+        });
+        // 删除（搜索态下删除后仍保持过滤视图）
+        listEl.querySelectorAll('.memo-del').forEach((b) => b.onclick = () => {
+          const id = b.dataset.id; const i = (store.memos || []).findIndex((x) => x.id === id);
+          if (i >= 0) { (store.memos).splice(i, 1); save(); drawList(); }
+        });
+      };
+      drawList();
+      // 搜索框：输入即过滤
+      m.querySelector('#memoSearch').oninput = (e) => { q = e.target.value; drawList(); };
       // 切换文件夹 / 新建文件夹
       m.querySelectorAll('.mf-chip').forEach((b) => b.onclick = () => {
         const f = b.dataset.f;
@@ -2306,15 +2343,6 @@
           return;
         }
         view = f; render();
-      });
-      // 实时保存已有备忘
-      m.querySelectorAll('.memo-edit[data-id]').forEach((t) => {
-        t.oninput = () => { const id = t.dataset.id; const it = (store.memos || []).find((x) => x.id === id); if (it) { it.text = t.value; save(); } };
-      });
-      // 删除
-      m.querySelectorAll('.memo-del').forEach((b) => b.onclick = () => {
-        const id = b.dataset.id; const i = (store.memos || []).findIndex((x) => x.id === id);
-        if (i >= 0) { (store.memos).splice(i, 1); save(); render(); }
       });
       // 新增
       m.querySelector('#memoAddBtn').onclick = () => {
