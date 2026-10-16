@@ -2228,8 +2228,10 @@
 .cd-detail{text-align:center;padding:14px 0}
 .cd-days-big{font-size:26px;font-weight:900;color:#2F80ED;margin:10px 0;font-variant-numeric:tabular-nums}
 .cd-sub{font-size:13px;color:#888}
-.modal.lg{width:min(94vw,560px);max-height:90vh}
-.modal.lg .modal-body{max-height:76vh;overflow:auto}`;
+.modal.lg{width:100vw;max-width:none;height:100vh;max-height:100vh;border-radius:0;animation:fadeIn .2s ease}
+.modal.lg .modal-top{padding:16px 18px;border-bottom:1px solid var(--line)}
+.modal.lg .modal-x{width:38px;height:38px;font-size:20px;border-radius:11px}
+.modal.lg .modal-body{max-height:none;height:calc(100vh - 64px);overflow-y:auto}`;
     document.head.appendChild(st);
   }
   function daysBetween(a, b) {
@@ -3473,7 +3475,7 @@
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     if (!document.getElementById('modalLgStyle')) {
       const st = document.createElement('style'); st.id = 'modalLgStyle';
-      st.textContent = '.modal.lg{width:min(94vw,560px);max-height:90vh}.modal.lg .modal-body{max-height:76vh;overflow:auto}';
+      st.textContent = '.modal.lg{width:100vw;max-width:none;height:100vh;max-height:100vh;border-radius:0;animation:fadeIn .2s ease}.modal.lg .modal-top{padding:16px 18px;border-bottom:1px solid var(--line)}.modal.lg .modal-x{width:38px;height:38px;font-size:20px;border-radius:11px}.modal.lg .modal-body{max-height:none;height:calc(100vh - 64px);overflow-y:auto}';
       document.head.appendChild(st);
     }
     let mask = $('#modalMask');
@@ -5858,7 +5860,7 @@
     if (injectExtLinkStyle._done) return; injectExtLinkStyle._done = true;
     const st = document.createElement('style');
     st.textContent = `
-.ext-link{display:flex;align-items:center;gap:8px;margin:8px 0;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,#2F80ED,#FF7AB8);color:#fff;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 12px rgba(180,120,220,.3)}
+.ext-link{display:flex;align-items:center;gap:8px;margin:8px 0;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 12px rgba(150,170,230,.25)}
 .ext-link:active{transform:scale(.98)}
 .ext-link .el-ic{font-size:17px}`;
     document.head.appendChild(st);
