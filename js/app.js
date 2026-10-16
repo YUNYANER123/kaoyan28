@@ -1500,8 +1500,10 @@
 .emoji-rain{position:fixed;inset:0;z-index:99998;pointer-events:none;overflow:hidden}
 .emoji-rain span{position:absolute;top:-9%;will-change:transform;animation:efe-fall linear forwards}
 @keyframes efe-fall{to{transform:translateY(114vh) rotate(380deg);opacity:.15}}
-/* v1.48：庆祝条改为内联（单词卡下方、导航按钮上方），不再用 fixed 大横幅挡住单词/释义 */
-.goal-done-inline{display:none;margin:12px auto 2px;max-width:100%;background:linear-gradient(135deg,#2F80ED,#FF7AB8);color:#fff;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:16px;border:2px solid rgba(255,170,210,.9);box-shadow:0 8px 24px rgba(180,120,220,.4),0 0 0 3px rgba(255,150,200,.3);text-align:center;white-space:nowrap;opacity:0;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
+/* v1.53b：庆祝条改为「固定在视口顶部的浮层」，位于所有页面之上、不占文档流、不推挤内容、pointer-events:none 不挡下方按钮。
+   上移而非原地腾位：之前插在 .wc-today 前会把它下方内容整体下推，导致「显示释义」被压到屏外/被遮挡。
+   现在 position:fixed;top:0 始终浮在屏幕顶端，单词卡/导航按钮位置不变、始终可点。 */
+.goal-done-inline{position:fixed;top:0;left:0;right:0;z-index:99999;display:none;margin:8px auto 0;max-width:min(94%,560px);background:linear-gradient(135deg,#2F80ED,#FF7AB8);color:#fff;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:0 0 18px 18px;border:2px solid rgba(255,170,210,.9);border-top:none;box-shadow:0 8px 24px rgba(180,120,220,.4),0 0 0 3px rgba(255,150,200,.3);text-align:center;white-space:nowrap;opacity:0;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
 .goal-done-inline.show{display:block;opacity:1;transform:scale(1)}`;
     document.head.appendChild(st);
   }
@@ -2144,6 +2146,10 @@
       if (addRow) addRow.appendChild(more); else if (pfRow) pfRow.appendChild(more);
       more.onclick = (e) => { e.stopPropagation(); togglePlanMore(); };
     }
+    // v1.53b：必须在进入计划页时就注入 #planMore 样式（⋮ 黄色/36×36/固定形状），
+    // 否则首屏未开过备忘录/倒数日弹窗时按钮会回退到 .add-row button 的蓝色扁框，
+    // 直到点开一次对话框才注入变黄。injectPlanMoreStyle 内部有 _done 守卫，重复调用安全。
+    injectPlanMoreStyle();
     const phRight = document.querySelector('.ph-right');
     const phRing = document.querySelector('.ph-ring');
     if (phRight && phRing && !document.getElementById('planSearch')) {
