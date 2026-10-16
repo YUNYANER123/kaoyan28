@@ -1526,7 +1526,8 @@
     let b = document.getElementById('goalDoneBanner');
     if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-inline'; }
     b.innerHTML = '🎉已完成今日<br>背诵单词目标！';
-    const nav = host.querySelector('.word-nav');
+    // v1.53①：插到「今日已背xx个·累计已学xx个·目标xx个」(.wc-today) 之前，占据该位置、把它挡在下方
+    const nav = host.querySelector('.wc-today');
     if (nav) host.insertBefore(b, nav); else host.appendChild(b);
     requestAnimationFrame(() => b.classList.add('show'));
     setTimeout(() => { b.classList.remove('show'); }, 3200);
@@ -2189,8 +2190,9 @@
 .cd-item .cd-date{font-size:12px;color:#888}
 .cd-item .cd-days{font-size:13px;font-weight:700;color:#2F80ED;white-space:nowrap}
 .cd-item .cd-del{border:none;background:rgba(255,123,146,.16);color:#E5476A;font-weight:800;padding:5px 10px;border-radius:9px;cursor:pointer;flex:0 0 auto}
-.add-row #planMore{flex:0 0 auto;width:42px;height:42px;border-radius:11px;border:none;background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;font-size:20px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.add-row #planMore:active{transform:scale(.94)}
+/* v1.53②：⋮ 按钮与旁边 + 按钮（#addCat）一致——黄色背景、同尺寸 36×36、点击形状固定不变 */
+.add-row #planMore{flex:0 0 36px;width:36px;height:36px;border-radius:11px;border:none;background:linear-gradient(135deg,#FFB454,#FFC48C);color:#fff;font-size:18px;font-weight:900;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.add-row #planMore:active{transform:none}
 .mf-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .mf-chip{padding:7px 12px;border-radius:10px;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:700;font-size:13px;cursor:pointer}
 .mf-chip.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
@@ -2202,6 +2204,7 @@
 .memo-del{border:none;background:rgba(255,123,146,.16);color:#E5476A;font-weight:800;padding:3px 9px;border-radius:8px;cursor:pointer;font-size:12px}
 .memo-edit{width:100%;min-height:54px;padding:8px 10px;font-size:14px;line-height:1.5;border:1px solid rgba(46,144,232,.3);border-radius:10px;resize:vertical;box-sizing:border-box;font-family:inherit}
 .memo-add{display:flex;flex-direction:column;gap:8px}
+.memo-add #memoAddBtn{height:44px;flex:0 0 auto;font-size:14px;font-weight:800}
 .cd-card{display:flex;align-items:center;gap:10px;background:rgba(46,144,232,.06);border-radius:12px;padding:10px 12px}
 .cd-card-main{flex:1 1 auto;min-width:0;cursor:pointer}
 .cd-type-tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:8px;margin-bottom:4px}
