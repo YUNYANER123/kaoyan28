@@ -2242,9 +2242,10 @@
 .t-festival{background:rgba(120,200,120,.18);color:#2E9E4F}
 .cd-name{font-weight:800;font-size:15px;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cd-days{font-size:13px;font-weight:700;color:#2F80ED;margin-top:2px}
-/* v1.53d：列表右侧统一「还有/已经 xx天」 */
+/* v1.53d：列表右侧统一「还有/已经 xx天」；v1.53e：还有(含今天)=蓝、已经=粉 */
 .cd-sub2{font-size:12px;color:#888;margin-top:2px}
-.cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#E5476A;white-space:nowrap;min-width:76px}
+.cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#2F80ED;white-space:nowrap;min-width:76px}
+.cd-right.past{color:#E5476A}
 /* v1.53d：年/月/日三列滚轮选择器（替代 input[type=date]，快速跨年选生日） */
 .cd-wheel{position:relative;display:flex;height:132px;border:1px solid rgba(46,144,232,.25);border-radius:12px;background:#fff;overflow:hidden;margin-top:6px}
 .cd-wheel::before,.cd-wheel::after{content:'';position:absolute;left:12px;right:12px;height:0;border-top:1px solid rgba(46,144,232,.35);pointer-events:none;z-index:2}
@@ -2440,9 +2441,7 @@
   }
   function lunarMonthName(m, isLeap) { const n = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊']; return (isLeap ? '闰' : '') + n[m - 1] + '月'; }
   function lunarYearList(type) {
-    const SL = globalThis.SolarLunar; const now = SL.solar2lunar(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate());
-    const cy = now.lYear; let lo, hi;
-    if (type === 'birthday') { lo = cy - 100; hi = cy + 1; } else { lo = cy - 1; hi = cy + 10; }
+    const lo = 1926, hi = 2126;   // v1.53e：与公历滚轮一致，年份范围拉长到 1926–2126（生日可回溯百年）
     const a = []; for (let y = lo; y <= hi; y++) a.push(y); return a;
   }
   function fillLunarSelects(root, state, type) {
@@ -2484,9 +2483,7 @@
   // v1.53d：公历 年/月/日 三列滚轮（替代 input[type=date]——父母生日要往前翻几百次太反人类）。
   // 生日年份范围 ±100，其余类型 去年～未来10年；年/月变化时日列按当月天数重建。
   function initSolarWheel(root, state, type) {
-    const cy = new Date().getFullYear();
-    const lo = type === 'birthday' ? cy - 100 : cy - 1;
-    const hi = type === 'birthday' ? cy + 1 : cy + 10;
+    const lo = 1926, hi = 2126;   // v1.53e：年份范围拉长到 1926–2126（约 200 年，倒数日/纪念日/节日/生日通用），父母生日等可一路前翻，不必逐月翻 480 次
     const years = []; for (let y = lo; y <= hi; y++) years.push(y);
     const init = /^\d{4}-\d{2}-\d{2}$/.test(state.date || '') ? state.date.split('-').map(Number) : [cy, new Date().getMonth() + 1, new Date().getDate()];
     const sel = { y: 0, m: 0, d: 0 };
@@ -2549,7 +2546,7 @@
             <div class="cd-name">${esc(c.type === 'birthday' ? (c.person + ' 的生日') : c.name)}</div>
             <div class="cd-sub2">${esc(info.sub || '')}</div>
           </div>
-          <div class="cd-right">${esc(info.text)}</div>
+          <div class="cd-right ${(info.days === null ? '' : (info.days < 0 ? 'past' : 'has'))}">${esc(info.text)}</div>
           <button class="cd-more" data-id="${c.id}">⋯</button>
         </div>`;
       }).join('') : '<div class="hint">还没有倒数日，点下方「添加」新建一个吧～</div>';
