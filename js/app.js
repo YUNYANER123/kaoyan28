@@ -2244,8 +2244,12 @@
 .cd-days{font-size:13px;font-weight:700;color:#2F80ED;margin-top:2px}
 /* v1.53d：列表右侧统一「还有/已经 xx天」；v1.53e：还有(含今天)=蓝、已经=粉 */
 .cd-sub2{font-size:12px;color:#888;margin-top:2px}
-.cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#2F80ED;white-space:nowrap;min-width:76px}
-.cd-right.past{color:#E5476A}
+/* v1.53f：还有(含今天)=浅蓝、已经=浅粉（较 v1.53e 的 #2F80ED/#E5476A 调浅） */
+.cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#5B9DE8;white-space:nowrap;min-width:76px}
+.cd-right.past{color:#F080A8}
+/* v1.53f：置顶标识——黄色徽章 + 卡片左侧高亮条，一眼看出哪些置顶 */
+.cd-pin{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;margin-bottom:4px;background:linear-gradient(135deg,#FFB454,#FFC48C);color:#7a4a00;vertical-align:middle}
+.cd-card.top{box-shadow:inset 4px 0 0 #FFC48C}
 /* v1.53d：年/月/日三列滚轮选择器（替代 input[type=date]，快速跨年选生日） */
 .cd-wheel{position:relative;display:flex;height:132px;border:1px solid rgba(46,144,232,.25);border-radius:12px;background:#fff;overflow:hidden;margin-top:6px}
 .cd-wheel::before,.cd-wheel::after{content:'';position:absolute;left:12px;right:12px;height:0;border-top:1px solid rgba(46,144,232,.35);pointer-events:none;z-index:2}
@@ -2439,6 +2443,13 @@
     const text = days > 0 ? ('还有 ' + days + ' 天') : '就是今天 🎉';
     return { text, sub, days };
   }
+  // v1.53f：列表排序键——置顶另算；未发生 days 升序在前，已过去按 abs 升序且整体在后
+  function cdSortVal(cd) {
+    const d = cdListInfo(cd).days;
+    if (d === null) return 1e9;        // 无天数信息（无法计算）→ 沉底
+    if (d >= 0) return d;              // 未发生：0(今天)..N，越近越前
+    return 1e7 + (-d);                 // 已过去：整体排在 1e7 之后（大于任何未发生天数，2126 上限约 36500 天），内部 abs 越小（越近过去）越前
+  }
   function lunarMonthName(m, isLeap) { const n = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊']; return (isLeap ? '闰' : '') + n[m - 1] + '月'; }
   function lunarYearList(type) {
     const lo = 1926, hi = 2126;   // v1.53e：与公历滚轮一致，年份范围拉长到 1926–2126（生日可回溯百年）
@@ -2537,12 +2548,17 @@
   function openCdList() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     const render = () => {
-      const list = (store.countdowns || []).slice().sort((a, b) => (b.top ? 1 : 0) - (a.top ? 1 : 0));
+      // v1.53f：先按置顶（top 的强制最前），置顶组内部与非置顶组一样按剩余天数排序
+      const list = (store.countdowns || []).slice().sort((a, b) => {
+        const ta = a.top ? 0 : 1, tb = b.top ? 0 : 1;
+        if (ta !== tb) return ta - tb;
+        return cdSortVal(a) - cdSortVal(b);
+      });
       const items = list.length ? list.map((c) => {
         const info = cdListInfo(c); const t = CD_TYPES[c.type] || CD_TYPES.countdown;
-        return `<div class="cd-card" data-id="${c.id}">
+        return `<div class="cd-card${c.top ? ' top' : ''}" data-id="${c.id}">
           <div class="cd-card-main" data-id="${c.id}">
-            <div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>
+            <div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>${c.top ? '<span class="cd-pin">📌 置顶</span>' : ''}
             <div class="cd-name">${esc(c.type === 'birthday' ? (c.person + ' 的生日') : c.name)}</div>
             <div class="cd-sub2">${esc(info.sub || '')}</div>
           </div>
