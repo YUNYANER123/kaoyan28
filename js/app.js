@@ -2248,8 +2248,18 @@
 .cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#5B9DE8;white-space:nowrap;min-width:76px}
 .cd-right.past{color:#F080A8}
 /* v1.53f：置顶标识——黄色徽章 + 卡片左侧高亮条，一眼看出哪些置顶 */
-.cd-pin{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;margin-bottom:4px;background:linear-gradient(135deg,#FFB454,#FFC48C);color:#7a4a00;vertical-align:middle}
-.cd-card.top{box-shadow:inset 4px 0 0 #FFC48C}
+/* v1.53g：标签行 flex 对齐——置顶徽章比类型标签略高 1px；徽章背景调浅 */
+.cd-tags{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.cd-tags .cd-type-tag{margin-bottom:0}
+.cd-pin{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;background:linear-gradient(135deg,#FFDCA8,#FFEDD2);color:#8a5c15;position:relative;top:-1px}
+.cd-card.top{box-shadow:inset 4px 0 0 #FFDCA8}
+/* v1.53g：四类倒数日卡片浅色底——生日按性别（男浅蓝/女浅粉/未填浅黄），纪念日浅粉、节日浅绿 */
+.cd-card.tbg-countdown{background:rgba(46,144,232,.07)}
+.cd-card.tbg-memorial{background:rgba(229,71,106,.08)}
+.cd-card.tbg-birthday{background:rgba(255,170,80,.10)}
+.cd-card.bd-m{background:rgba(46,144,232,.09)}
+.cd-card.bd-f{background:rgba(229,71,106,.08)}
+.cd-card.tbg-festival{background:rgba(46,158,79,.09)}
 /* v1.53d：年/月/日三列滚轮选择器（替代 input[type=date]，快速跨年选生日） */
 .cd-wheel{position:relative;display:flex;height:132px;border:1px solid rgba(46,144,232,.25);border-radius:12px;background:#fff;overflow:hidden;margin-top:6px}
 .cd-wheel::before,.cd-wheel::after{content:'';position:absolute;left:12px;right:12px;height:0;border-top:1px solid rgba(46,144,232,.35);pointer-events:none;z-index:2}
@@ -2300,6 +2310,8 @@
       planMoreMenu.querySelector('[data-m="memo"]').onclick = () => { hidePlanMore(); openMemo(); };
       planMoreMenu.querySelector('[data-m="cd"]').onclick = () => { hidePlanMore(); openCountdown(); };
       document.addEventListener('click', onDocClickCloseMore);
+      // v1.53g：滑动计划页面（任意容器滚动）即关闭 ⋮ 菜单——capture 捕获所有内部滚动
+      document.addEventListener('scroll', () => { if (planMoreMenu && !planMoreMenu.classList.contains('hidden')) hidePlanMore(); }, true);
     }
     const btn = document.getElementById('planMore');
     if (btn) {
@@ -2436,12 +2448,15 @@
     }
     const days = Math.round((occ - today0) / 86400000);
     let sub = fmtDate(occ);
+    let age = null;
     if (cd.type === 'birthday') {
       const by = cd.cal === 'solar' ? new Date(cd.date + 'T00:00:00').getFullYear() : cd.refYear;
-      sub += ' · ' + (occ.getFullYear() - by) + '岁生日';
+      age = occ.getFullYear() - by;   // v1.53g：岁数移到名字行「xx的xx岁生日」
+      // v1.53g：农历生日副标题带农历写法（如 2027年5月11日 · 农历四月初八）
+      if (cd.cal === 'lunar') sub += ' · 农历' + lunarMonthName(cd.lm, cd.lLeap) + lunarDayName(cd.ld);
     }
     const text = days > 0 ? ('还有 ' + days + ' 天') : '就是今天 🎉';
-    return { text, sub, days };
+    return { text, sub, days, age };
   }
   // v1.53f：列表排序键——置顶另算；未发生 days 升序在前，已过去按 abs 升序且整体在后
   function cdSortVal(cd) {
@@ -2451,6 +2466,16 @@
     return 1e7 + (-d);                 // 已过去：整体排在 1e7 之后（大于任何未发生天数，2126 上限约 36500 天），内部 abs 越小（越近过去）越前
   }
   function lunarMonthName(m, isLeap) { const n = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊']; return (isLeap ? '闰' : '') + n[m - 1] + '月'; }
+  // v1.53g：农历日中文写法——初一…初十、十一…十九、二十、廿一…廿九、三十
+  function lunarDayName(d) {
+    const n = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    if (d === 1) return '初一';
+    if (d <= 10) return '初' + n[d - 1];
+    if (d < 20) return '十' + n[d - 11];
+    if (d === 20) return '二十';
+    if (d < 30) return '廿' + n[d - 21];
+    return '三十';
+  }
   function lunarYearList(type) {
     const lo = 1926, hi = 2126;   // v1.53e：与公历滚轮一致，年份范围拉长到 1926–2126（生日可回溯百年）
     const a = []; for (let y = lo; y <= hi; y++) a.push(y); return a;
@@ -2556,10 +2581,13 @@
       });
       const items = list.length ? list.map((c) => {
         const info = cdListInfo(c); const t = CD_TYPES[c.type] || CD_TYPES.countdown;
-        return `<div class="cd-card${c.top ? ' top' : ''}" data-id="${c.id}">
+        // v1.53g：四类卡片浅色底（生日按性别 男浅蓝/女浅粉/未填浅黄）+ 生日名字行带岁数
+        const bgCls = c.type === 'birthday' ? (c.gender === '男' ? 'bd-m' : (c.gender === '女' ? 'bd-f' : 'tbg-birthday')) : ('tbg-' + c.type);
+        const nm = c.type === 'birthday' ? ((c.person || '') + '的' + (info.age != null ? info.age : '?') + '岁生日') : c.name;
+        return `<div class="cd-card ${bgCls}${c.top ? ' top' : ''}" data-id="${c.id}">
           <div class="cd-card-main" data-id="${c.id}">
-            <div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>${c.top ? '<span class="cd-pin">📌 置顶</span>' : ''}
-            <div class="cd-name">${esc(c.type === 'birthday' ? (c.person + ' 的生日') : c.name)}</div>
+            <div class="cd-tags"><div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>${c.top ? '<span class="cd-pin">📌 置顶</span>' : ''}</div>
+            <div class="cd-name">${esc(nm)}</div>
             <div class="cd-sub2">${esc(info.sub || '')}</div>
           </div>
           <div class="cd-right ${(info.days === null ? '' : (info.days < 0 ? 'past' : 'has'))}">${esc(info.text)}</div>
@@ -2666,7 +2694,10 @@
       else if (a === 'top') { store.countdowns[i].top = !store.countdowns[i].top; save(); menu.remove(); openCdList(); }
       else if (a === 'del') { store.countdowns.splice(i, 1); save(); menu.remove(); openCdList(); }
     });
-    setTimeout(() => { const close = (e) => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close); } }; document.addEventListener('click', close); }, 0);
+    // v1.53g：点击其他地方 / 滑动列表（任意容器滚动）都关闭 ⋮ 菜单
+    const closeMenu = (e) => { if (!e || (!menu.contains(e.target) && e.target !== btn)) { menu.remove(); document.removeEventListener('click', closeMenu); document.removeEventListener('scroll', closeMenu, true); } };
+    setTimeout(() => { document.addEventListener('click', closeMenu); }, 0);
+    document.addEventListener('scroll', closeMenu, true);
   }
 
   /* —— ⚠ 以往未完成的计划（不含当天，可点击跳转到对应日期） —— */
