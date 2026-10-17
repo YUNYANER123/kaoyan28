@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v26';   // v26——修复 PWA 缓存导致的「手机端长期显示旧版」问题：①index.html 与 js/app.js 改为 network-first（每次部署后手机端刷新即拿到新版，无需手动清缓存）②其余静态资源仍 cache-first 保留离线能力 ③缓存名升级使旧版 kaoyan28-v25 缓存被 activate 阶段自动清除。
+const CACHE = 'kaoyan28-v27';   // v27——每次部署升一版，使旧缓存被 activate 阶段自动清除；index.html 与 js/app.js 仍 network-first（手机端刷新即拿新版）。
 
 const ASSETS = [
   './',

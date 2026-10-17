@@ -1037,13 +1037,17 @@
       weekReviews: s.weekReviews || [], monthReviews: s.monthReviews || {},
     });
     // 备忘录：旧版单条 store.memo（string）迁移到文件夹结构（migrate 在 load 时调用，uid 尚未初始化，故用本地 genId）
+    // v1.53d 关键修复：迁移完成后必须删除旧字段 memo！否则旧字符串一直留在存档里，
+    // 每次启动 load() 都会重新走迁移分支，把用户后来新增的 memos / 自建文件夹整体重置清空
+    // （用户实测：退出 app 后备忘/文件夹全部消失，而其他数据完好——正是此因）。
     const genId = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    if (typeof s.memo === 'string') {
+    delete merged.memo;
+    if (typeof s.memo === 'string' && s.memo.trim() && !(Array.isArray(s.memos) && s.memos.length)) {
       merged.memoFolders = [{ id: 'default', name: '默认文件夹' }];
-      merged.memos = s.memo.trim() ? [{ id: genId(), folderId: 'default', text: s.memo, ts: Date.now() }] : [];
+      merged.memos = [{ id: genId(), folderId: 'default', text: s.memo, ts: Date.now() }];
     } else {
       merged.memoFolders = (s.memoFolders && s.memoFolders.length) ? s.memoFolders : [{ id: 'default', name: '默认文件夹' }];
-      merged.memos = s.memos || [];
+      merged.memos = Array.isArray(s.memos) ? s.memos : [];
     }
     // 倒数日：补齐富类型字段
     merged.countdowns = (s.countdowns || []).map((c) => ({
@@ -1727,6 +1731,8 @@
     if (scope) { scope.remove(); return 'stay'; }
     const mask = document.getElementById('modalMask');
     if (mask && !mask.classList.contains('hidden')) {
+      // v1.53d：弹窗内二级返回——如「添加倒数日」表单的返回键应回倒数日列表，而不是直接退回计划页
+      if (typeof window._modalBackTo === 'function') { const f = window._modalBackTo; window._modalBackTo = null; f(); return 'stay'; }
       mask.classList.add('hidden');
       const sp = document.getElementById('sentencePop'); if (sp) sp.classList.add('hidden');
       return 'stay';
@@ -2236,6 +2242,22 @@
 .t-festival{background:rgba(120,200,120,.18);color:#2E9E4F}
 .cd-name{font-weight:800;font-size:15px;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cd-days{font-size:13px;font-weight:700;color:#2F80ED;margin-top:2px}
+/* v1.53d：列表右侧统一「还有/已经 xx天」 */
+.cd-sub2{font-size:12px;color:#888;margin-top:2px}
+.cd-right{flex:0 0 auto;align-self:center;text-align:right;font-weight:900;font-size:16px;color:#E5476A;white-space:nowrap;min-width:76px}
+/* v1.53d：年/月/日三列滚轮选择器（替代 input[type=date]，快速跨年选生日） */
+.cd-wheel{position:relative;display:flex;height:132px;border:1px solid rgba(46,144,232,.25);border-radius:12px;background:#fff;overflow:hidden;margin-top:6px}
+.cd-wheel::before,.cd-wheel::after{content:'';position:absolute;left:12px;right:12px;height:0;border-top:1px solid rgba(46,144,232,.35);pointer-events:none;z-index:2}
+.cd-wheel::before{top:44px}
+.cd-wheel::after{top:88px}
+.cd-wheel-col{flex:1 1 0;min-width:0;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;text-align:center;scrollbar-width:none}
+.cd-wheel-col::-webkit-scrollbar{display:none}
+.cd-wheel-pad{height:44px}
+.cd-wheel-item{height:44px;line-height:44px;font-size:16px;font-weight:700;color:#b9c2cc;scroll-snap-align:center;cursor:pointer}
+.cd-wheel-item.on{color:#111;font-size:19px}
+/* v1.53d：添加页顶部四类型切换（无 emoji） */
+.cd-type-row2{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.cd-type-row2 .cd-type-btn{padding:9px 4px;text-align:center}
 .cd-more{border:none;background:rgba(0,0,0,.05);color:#666;font-size:18px;width:34px;height:34px;border-radius:10px;cursor:pointer;flex:0 0 auto}
 .cd-field{margin-bottom:12px}
 .cd-field>label{display:block;font-size:13px;font-weight:700;color:#555;margin-bottom:5px}
@@ -2394,13 +2416,27 @@
   }
   function cdListInfo(cd) {
     const occ = cdNextOccurrence(cd);
-    if (!occ) return { text: '已过去', days: null };
-    const days = Math.round((occ - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
+    const today0 = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    // v1.53d：无重复且已过去 → 右侧统一显示「已经 xx 天」（含农历）
+    if (!occ) {
+      let base = null;
+      if (cd.cal === 'solar') base = new Date(cd.date + 'T00:00:00');
+      else {
+        const SL = globalThis.SolarLunar;
+        if (SL) { const r = SL.lunar2solar(cd.refYear, cd.lm, cd.ld, cd.lLeap); if (r && r !== -1) base = new Date(r.cYear, r.cMonth - 1, r.cDay); }
+      }
+      if (!base || isNaN(base)) return { text: '已过去', sub: '', days: null };
+      const gone = Math.max(0, Math.round((today0 - base) / 86400000));
+      return { text: '已经 ' + gone + ' 天', sub: fmtDate(base), days: -gone };
+    }
+    const days = Math.round((occ - today0) / 86400000);
+    let sub = fmtDate(occ);
     if (cd.type === 'birthday') {
       const by = cd.cal === 'solar' ? new Date(cd.date + 'T00:00:00').getFullYear() : cd.refYear;
-      return { text: (occ.getFullYear() - by) + '岁生日', sub: fmtDate(occ), days };
+      sub += ' · ' + (occ.getFullYear() - by) + '岁生日';
     }
-    return { text: days > 0 ? ('还有 ' + days + ' 天') : (days === 0 ? '就是今天 🎉' : '已过去 ' + (-days) + ' 天'), sub: fmtDate(occ), days };
+    const text = days > 0 ? ('还有 ' + days + ' 天') : '就是今天 🎉';
+    return { text, sub, days };
   }
   function lunarMonthName(m, isLeap) { const n = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊']; return (isLeap ? '闰' : '') + n[m - 1] + '月'; }
   function lunarYearList(type) {
@@ -2429,21 +2465,66 @@
     mSel.onchange = () => { const v = mSel.value; if (v[0] === 'L') { state.lm = +v.slice(1); state.lLeap = true; } else { state.lm = +v; state.lLeap = false; } fillLunarSelects(root, state, type); };
     dSel.onchange = () => { state.ld = +dSel.value; };
   }
+  const CD_WHEEL_H = 44;   // 滚轮行高（与 .cd-wheel-item/.cd-wheel-pad 的 44px 对应）
   function datePickerHTML(state) {
     return `
-    <div class="cd-cal-seg">
-      <button type="button" class="cd-seg ${state.cal === 'solar' ? 'on' : ''}" data-cal="solar">公历</button>
-      <button type="button" class="cd-seg ${state.cal === 'lunar' ? 'on' : ''}" data-cal="lunar">农历</button>
-    </div>
-    <div class="cd-datebox">
-      <input type="date" class="cd-date-in solar-only" value="${state.cal === 'solar' ? (state.date || '') : ''}" ${state.cal === 'lunar' ? 'style="display:none"' : ''}>
-      <div class="lunar-picker lunar-only" ${state.cal === 'solar' ? 'style="display:none"' : ''}>
-        <select class="lunar-year"></select><select class="lunar-month"></select><select class="lunar-day"></select>
+    <div class="cd-picker-wrap">
+      <div class="cd-cal-seg">
+        <button type="button" class="cd-seg ${state.cal === 'solar' ? 'on' : ''}" data-cal="solar">公历</button>
+        <button type="button" class="cd-seg ${state.cal === 'lunar' ? 'on' : ''}" data-cal="lunar">农历</button>
+      </div>
+      <div class="cd-datebox">
+        <div class="cd-wheel solar-only" ${state.cal === 'lunar' ? 'style="display:none"' : ''}></div>
+        <div class="lunar-picker lunar-only" ${state.cal === 'solar' ? 'style="display:none"' : ''}>
+          <select class="lunar-year"></select><select class="lunar-month"></select><select class="lunar-day"></select>
+        </div>
       </div>
     </div>`;
   }
+  // v1.53d：公历 年/月/日 三列滚轮（替代 input[type=date]——父母生日要往前翻几百次太反人类）。
+  // 生日年份范围 ±100，其余类型 去年～未来10年；年/月变化时日列按当月天数重建。
+  function initSolarWheel(root, state, type) {
+    const cy = new Date().getFullYear();
+    const lo = type === 'birthday' ? cy - 100 : cy - 1;
+    const hi = type === 'birthday' ? cy + 1 : cy + 10;
+    const years = []; for (let y = lo; y <= hi; y++) years.push(y);
+    const init = /^\d{4}-\d{2}-\d{2}$/.test(state.date || '') ? state.date.split('-').map(Number) : [cy, new Date().getMonth() + 1, new Date().getDate()];
+    const sel = { y: 0, m: 0, d: 0 };
+    const dim = (y, mo) => new Date(y, mo, 0).getDate();
+    sel.y = Math.max(0, years.indexOf(init[0]));
+    sel.m = Math.min(11, Math.max(0, init[1] - 1));
+    sel.d = Math.min(dim(years[sel.y], sel.m + 1) - 1, Math.max(0, init[2] - 1));
+    const colHTML = (items, cur) => '<div class="cd-wheel-pad"></div>' +
+      items.map((it, i) => `<div class="cd-wheel-item${i === cur ? ' on' : ''}" data-i="${i}">${it}</div>`).join('') +
+      '<div class="cd-wheel-pad"></div>';
+    root.innerHTML = `<div class="cd-wheel-col" data-k="y">${colHTML(years.map((y) => y + '年'), sel.y)}</div>` +
+      `<div class="cd-wheel-col" data-k="m">${colHTML(Array.from({ length: 12 }, (_, i) => (i + 1) + '月'), sel.m)}</div>` +
+      `<div class="cd-wheel-col" data-k="d">${colHTML(Array.from({ length: dim(years[sel.y], sel.m + 1) }, (_, i) => (i + 1) + '日'), sel.d)}</div>`;
+    const colEls = { y: root.querySelector('[data-k="y"]'), m: root.querySelector('[data-k="m"]'), d: root.querySelector('[data-k="d"]') };
+    const write = () => { state.date = years[sel.y] + '-' + String(sel.m + 1).padStart(2, '0') + '-' + String(sel.d + 1).padStart(2, '0'); };
+    const setSel = (k, i) => {
+      const cnt = k === 'y' ? years.length : (k === 'm' ? 12 : dim(years[sel.y], sel.m + 1));
+      sel[k] = Math.max(0, Math.min(cnt - 1, i));
+      colEls[k].querySelectorAll('.cd-wheel-item').forEach((x) => x.classList.toggle('on', +x.dataset.i === sel[k]));
+      if (k !== 'd') {
+        const n = dim(years[sel.y], sel.m + 1);
+        sel.d = Math.min(sel.d, n - 1);
+        if (colEls.d.querySelectorAll('.cd-wheel-item').length !== n) { colEls.d.innerHTML = colHTML(Array.from({ length: n }, (_, j) => (j + 1) + '日'), sel.d); bind('d'); }
+      }
+      write();
+    };
+    const bind = (k) => {
+      const el = colEls[k];
+      el.onscroll = () => setSel(k, Math.round(el.scrollTop / CD_WHEEL_H));
+      el.querySelectorAll('.cd-wheel-item').forEach((x) => x.onclick = () => { el.scrollTop = (+x.dataset.i) * CD_WHEEL_H; setSel(k, +x.dataset.i); });
+    };
+    Object.keys(colEls).forEach(bind);
+    colEls.y.scrollTop = sel.y * CD_WHEEL_H; colEls.m.scrollTop = sel.m * CD_WHEEL_H; colEls.d.scrollTop = sel.d * CD_WHEEL_H;
+    write();
+  }
   function initDatePicker(m, state, type) {
-    const seg = m.querySelectorAll('.cd-seg');
+    const wrap = m.querySelector('.cd-picker-wrap');
+    const seg = wrap.querySelectorAll('.cd-seg');
     seg.forEach((b) => b.onclick = () => {
       state.cal = b.dataset.cal;
       seg.forEach((x) => x.classList.toggle('on', x.dataset.cal === state.cal));
@@ -2452,8 +2533,8 @@
       if (lo) lo.style.display = state.cal === 'lunar' ? '' : 'none';
       if (state.cal === 'lunar') initLunarPicker(m.querySelector('.lunar-only'), state, type);
     });
-    const si = m.querySelector('.solar-only');
-    if (si) si.onchange = () => { state.date = si.value; };
+    const so = wrap.querySelector('.solar-only');
+    if (so && state.cal === 'solar') initSolarWheel(so, state, type);
     if (state.cal === 'lunar') initLunarPicker(m.querySelector('.lunar-only'), state, type);
   }
   function openCdList() {
@@ -2466,8 +2547,9 @@
           <div class="cd-card-main" data-id="${c.id}">
             <div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>
             <div class="cd-name">${esc(c.type === 'birthday' ? (c.person + ' 的生日') : c.name)}</div>
-            <div class="cd-days">${esc(info.text)}${info.sub ? (' · ' + esc(info.sub)) : ''}</div>
+            <div class="cd-sub2">${esc(info.sub || '')}</div>
           </div>
+          <div class="cd-right">${esc(info.text)}</div>
           <button class="cd-more" data-id="${c.id}">⋯</button>
         </div>`;
       }).join('') : '<div class="hint">还没有倒数日，点下方「添加」新建一个吧～</div>';
@@ -2481,50 +2563,28 @@
     };
     render();
   }
+  // v1.53d：添加/编辑合并为单页表单——顶部四类型切换按钮（无 emoji，默认倒数日），
+  // 事件名/寿星姓名 + 滚轮选日期 + 重复（生日=性别+重复，默认每年不可改）全部同页，不再「继续」跳第二个界面；
+  // 点 × / 点遮罩 / 手机返回键 → 返回倒数日列表（window._modalBackTo），不直接退回计划页。
   function openCdAdd() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
-    const draft = { type: '', name: '', person: '', gender: '', cal: 'solar', date: '', lm: 1, ld: 1, lLeap: false, refYear: new Date().getFullYear(), repeat: 'none' };
-    const render = () => {
-      const nameLabel = draft.type === 'birthday' ? '寿星姓名' : '事件名';
-      openModal('📆 添加倒数日', `
-        <div class="cd-field"><label>${nameLabel}</label><input id="cdName" class="cd-name-in" placeholder="如：${draft.type === 'birthday' ? '小明' : '考研初试'}" value="${esc(draft.name || draft.person || '')}"></div>
-        <div class="cd-field"><label>时间</label><div id="cdPicker">${datePickerHTML(draft)}</div></div>
-        <div class="cd-field"><label>类型（必选）</label>
-          <button class="gbtn ${draft.type ? '' : 'ghost'}" id="cdTypeBtn">${draft.type ? CD_TYPES[draft.type].icon + ' ' + CD_TYPES[draft.type].label : '选择类型（必选）'}</button>
-          <div class="cd-type-btns hidden" id="cdTypeBtns">
-            ${Object.keys(CD_TYPES).map((k) => `<button type="button" class="cd-type-btn" data-t="${k}">${CD_TYPES[k].icon} ${CD_TYPES[k].label}</button>`).join('')}
-          </div>
-        </div>
-        <div class="btn-row"><button class="gbtn" id="cdNext">继续</button></div>`, 'lg');
-      const m = document.getElementById('modalMask'); if (!m) return;
-      initDatePicker(m, draft, draft.type);
-      m.querySelector('#cdName').oninput = (e) => { if (draft.type === 'birthday') draft.person = e.target.value; else draft.name = e.target.value; };
-      m.querySelector('#cdTypeBtn').onclick = () => m.querySelector('#cdTypeBtns').classList.toggle('hidden');
-      m.querySelectorAll('.cd-type-btn').forEach((b) => b.onclick = () => {
-        draft.type = b.dataset.t; if (draft.type === 'birthday') draft.repeat = 'yearly';
-        m.querySelector('#cdTypeBtns').classList.add('hidden'); render();
-      });
-      m.querySelector('#cdNext').onclick = () => {
-        if (!draft.name.trim() && !draft.person.trim()) { toast('请填写' + (draft.type === 'birthday' ? '寿星姓名' : '事件名')); return; }
-        const ok = draft.cal === 'solar' ? !!draft.date : (draft.lm && draft.ld);
-        if (!ok) { toast('请选择时间'); return; }
-        if (draft.type === 'birthday') { draft.person = (draft.person || draft.name); draft.name = ''; }
-        openCdEdit(draft, true);
-      };
-    };
-    render();
+    openCdForm({ type: 'countdown', name: '', person: '', gender: '', cal: 'solar', date: '', lm: 1, ld: 1, lLeap: false, refYear: new Date().getFullYear(), repeat: 'none' }, true);
   }
-  function openCdEdit(draft, isNew) {
+  function openCdEdit(draft, isNew) { openCdForm(draft, isNew); }
+  function openCdForm(draft, isNew) {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
-    const title = isNew ? (CD_TYPES[draft.type].icon + ' ' + CD_TYPES[draft.type].label + ' · 设置') : '编辑';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date || '')) {
+      const t = new Date();
+      draft.date = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    }
+    const title = isNew ? '添加倒数日' : '编辑';
     const render = () => {
       const isB = draft.type === 'birthday';
       openModal(title, `
-        <div class="cd-type-btns cd-type-row">
-          ${Object.keys(CD_TYPES).map((k) => `<button type="button" class="cd-type-btn ${draft.type === k ? 'on' : ''}" data-t="${k}">${CD_TYPES[k].icon} ${CD_TYPES[k].label}</button>`).join('')}
+        <div class="cd-type-row2">
+          ${['countdown', 'memorial', 'birthday', 'festival'].map((k) => `<button type="button" class="cd-type-btn ${draft.type === k ? 'on' : ''}" data-t="${k}">${CD_TYPES[k].label}</button>`).join('')}
         </div>
-        ${isB ? `<div class="cd-field"><label>寿星姓名</label><input id="cdName" class="cd-name-in" placeholder="如：小明" value="${esc(draft.person || '')}"></div>` : ``}
-        ${!isB ? `<div class="cd-field"><label>事件名</label><input id="cdName" class="cd-name-in" placeholder="如：考研初试" value="${esc(draft.name || '')}"></div>` : ``}
+        <div class="cd-field"><label>${isB ? '寿星姓名' : '事件名'}</label><input id="cdName" class="cd-name-in" placeholder="如：${isB ? '小明' : '考研初试'}" value="${esc(isB ? (draft.person || '') : (draft.name || ''))}"></div>
         <div class="cd-field"><label>时间</label><div id="cdPicker">${datePickerHTML(draft)}</div></div>
         ${isB ? `<div class="cd-field"><label>性别</label><div class="cd-cal-seg" id="cdGender">
           <button type="button" class="cd-seg ${draft.gender === 'm' ? 'on' : ''}" data-g="m">男</button>
@@ -2537,16 +2597,21 @@
         </div>
         <div class="btn-row"><button class="gbtn" id="cdSave">${isNew ? '保存' : '完成'}</button></div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
+      // × / 点遮罩 / 手机返回键 → 回倒数日列表
+      window._modalBackTo = openCdList;
+      const xb = m.querySelector('.modal-x');
+      if (xb) xb.onclick = () => { const f = window._modalBackTo; window._modalBackTo = null; if (f) f(); };
+      m.onclick = (e) => { if (e.target === m) { const f = window._modalBackTo; window._modalBackTo = null; if (f) f(); } };
       initDatePicker(m, draft, draft.type);
       m.querySelector('#cdName').oninput = (e) => { if (isB) draft.person = e.target.value; else draft.name = e.target.value; };
       if (isB) {
         m.querySelectorAll('#cdGender .cd-seg').forEach((b) => b.onclick = () => { draft.gender = b.dataset.g; m.querySelectorAll('#cdGender .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.g === draft.gender)); });
       }
       m.querySelectorAll('#cdRepeat .cd-seg').forEach((b) => b.onclick = () => { if (b.disabled) return; draft.repeat = b.dataset.r; m.querySelectorAll('#cdRepeat .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.r === draft.repeat)); });
-      m.querySelectorAll('.cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; if (t === 'birthday') draft.repeat = 'yearly'; render(); });
+      m.querySelectorAll('.cd-type-row2 .cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; if (t === 'birthday') draft.repeat = 'yearly'; render(); });
       m.querySelector('#cdSave').onclick = () => {
-        if (isB && !draft.person.trim()) { toast('请填写寿星姓名'); return; }
-        if (!isB && !draft.name.trim()) { toast('请填写事件名'); return; }
+        if (isB && !(draft.person || '').trim()) { toast('请填写寿星姓名'); return; }
+        if (!isB && !(draft.name || '').trim()) { toast('请填写事件名'); return; }
         const ok = (draft.cal === 'solar' ? draft.date : (draft.lm && draft.ld));
         if (!ok) { toast('请选择时间'); return; }
         if (isB && !draft.gender) { toast('请选择性别'); return; }
@@ -3510,6 +3575,7 @@
   /* 通用弹窗（查看阅读/精翻/真题例文全文） */
   function openModal(title, bodyHTML, sizeCls) {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
+    window._modalBackTo = null;   // v1.53d：每个弹窗默认无二级返回路由，由特定弹窗（如倒数日表单）自行设置
     if (!document.getElementById('modalLgStyle')) {
       const st = document.createElement('style'); st.id = 'modalLgStyle';
       st.textContent = '.modal.lg{width:100vw;max-width:none;height:100vh;max-height:100vh;border-radius:0;animation:fadeIn .2s ease}.modal.lg .modal-top{padding:16px 18px;border-bottom:1px solid var(--line)}.modal.lg .modal-x{width:38px;height:38px;font-size:20px;border-radius:11px}.modal.lg .modal-body{max-height:none;height:calc(100vh - 64px);overflow-y:auto}';
@@ -3546,6 +3612,12 @@
     mask.querySelector('.modal').className = 'modal' + (sizeCls === 'lg' ? ' lg' : '');
     mask.querySelector('.modal-title').textContent = title;
     mask.querySelector('.modal-body').innerHTML = bodyHTML;
+    // v1.53d：每次打开都重绑 × / 遮罩为「默认关闭」，防止上一个弹窗（如倒数日表单的「回列表」）的处理器残留
+    mask.querySelector('.modal-x').onclick = () => {
+      const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden');
+      mask.classList.add('hidden');
+    };
+    mask.onclick = (e) => { if (e.target === mask) { const sp = $('#sentencePop'); if (sp) sp.classList.add('hidden'); mask.classList.add('hidden'); } };
     const _mb = mask.querySelector('.modal-body'); if (_mb) { _mb.scrollTop = 0; }
     mask.classList.remove('hidden');
     if (_mb) requestAnimationFrame(() => { _mb.scrollTop = 0; });  // 打开即定位到顶部（首行“内容”可见）
