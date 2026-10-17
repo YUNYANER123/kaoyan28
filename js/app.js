@@ -2253,13 +2253,13 @@
 .cd-tags .cd-type-tag{margin-bottom:0}
 .cd-pin{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;background:linear-gradient(135deg,#FFDCA8,#FFEDD2);color:#8a5c15;position:relative;top:-1px}
 .cd-card.top{box-shadow:inset 4px 0 0 #FFDCA8}
-/* v1.53g：四类倒数日卡片浅色底——生日按性别（男浅蓝/女浅粉/未填浅黄），纪念日浅粉、节日浅绿 */
-.cd-card.tbg-countdown{background:rgba(46,144,232,.07)}
-.cd-card.tbg-memorial{background:rgba(229,71,106,.08)}
-.cd-card.tbg-birthday{background:rgba(255,170,80,.10)}
+/* v1.53h：卡片浅色底——生日男浅蓝/女浅粉；倒数日浅绿、纪念日浅橙、节日浅紫（避开蓝粉，不与生日撞）；未设性别生日用中性浅灰（不再黄色） */
+.cd-card.tbg-countdown{background:rgba(46,158,79,.10)}
+.cd-card.tbg-memorial{background:rgba(255,158,60,.12)}
+.cd-card.tbg-birthday{background:rgba(150,150,150,.10)}
 .cd-card.bd-m{background:rgba(46,144,232,.09)}
 .cd-card.bd-f{background:rgba(229,71,106,.08)}
-.cd-card.tbg-festival{background:rgba(46,158,79,.09)}
+.cd-card.tbg-festival{background:rgba(150,110,220,.10)}
 /* v1.53d：年/月/日三列滚轮选择器（替代 input[type=date]，快速跨年选生日） */
 .cd-wheel{position:relative;display:flex;height:132px;border:1px solid rgba(46,144,232,.25);border-radius:12px;background:#fff;overflow:hidden;margin-top:6px}
 .cd-wheel::before,.cd-wheel::after{content:'';position:absolute;left:12px;right:12px;height:0;border-top:1px solid rgba(46,144,232,.35);pointer-events:none;z-index:2}
@@ -2477,7 +2477,8 @@
     return '三十';
   }
   function lunarYearList(type) {
-    const lo = 1926, hi = 2126;   // v1.53e：与公历滚轮一致，年份范围拉长到 1926–2126（生日可回溯百年）
+    // v1.53e：与公历滚轮一致，年份范围拉长到 1926–2126；v1.53h：生日只到当前年（出生不可能在未来），其余类型仍到 2126
+    const lo = 1926, hi = (type === 'birthday' ? new Date().getFullYear() : 2126);
     const a = []; for (let y = lo; y <= hi; y++) a.push(y); return a;
   }
   function fillLunarSelects(root, state, type) {
@@ -2490,7 +2491,8 @@
     if (leap > 0) months.push({ m: leap, leap: true });
     mSel.innerHTML = months.map((o) => { const v = o.leap ? 'L' + o.m : '' + o.m; const sel = v == (state.lLeap ? 'L' + state.lm : '' + state.lm) ? 'selected' : ''; return `<option value="${v}" ${sel}>${lunarMonthName(o.m, o.leap)}</option>`; }).join('');
     const days = SL.monthDays(state.refYear, state.lLeap ? leap : state.lm);
-    let opts = ''; for (let d = 1; d <= days; d++) opts += `<option value="${d}" ${d == state.ld ? 'selected' : ''}>${d}日</option>`;
+    // v1.53h+：农历「日」选择器改显示农历读法（初一…三十），而非 1日-30日；value 仍存数字，不影响存档
+    let opts = ''; for (let d = 1; d <= days; d++) opts += `<option value="${d}" ${d == state.ld ? 'selected' : ''}>${lunarDayName(d)}</option>`;
     dSel.innerHTML = opts;
   }
   function initLunarPicker(root, state, type) {
@@ -2519,7 +2521,8 @@
   // v1.53d：公历 年/月/日 三列滚轮（替代 input[type=date]——父母生日要往前翻几百次太反人类）。
   // 生日年份范围 ±100，其余类型 去年～未来10年；年/月变化时日列按当月天数重建。
   function initSolarWheel(root, state, type) {
-    const lo = 1926, hi = 2126;   // v1.53e：年份范围拉长到 1926–2126（约 200 年，倒数日/纪念日/节日/生日通用），父母生日等可一路前翻，不必逐月翻 480 次
+    // v1.53e：年份范围拉长到 1926–2126（约 200 年，倒数日/纪念日/节日通用）；v1.53h：生日只到当前年 cy（出生不可能在未来），父母生日可一路前翻到 1926
+    const lo = 1926, hi = (type === 'birthday' ? new Date().getFullYear() : 2126);
     const years = []; for (let y = lo; y <= hi; y++) years.push(y);
     const init = /^\d{4}-\d{2}-\d{2}$/.test(state.date || '') ? state.date.split('-').map(Number) : [cy, new Date().getMonth() + 1, new Date().getDate()];
     const sel = { y: 0, m: 0, d: 0 };
@@ -2582,7 +2585,10 @@
       const items = list.length ? list.map((c) => {
         const info = cdListInfo(c); const t = CD_TYPES[c.type] || CD_TYPES.countdown;
         // v1.53g：四类卡片浅色底（生日按性别 男浅蓝/女浅粉/未填浅黄）+ 生日名字行带岁数
-        const bgCls = c.type === 'birthday' ? (c.gender === '男' ? 'bd-m' : (c.gender === '女' ? 'bd-f' : 'tbg-birthday')) : ('tbg-' + c.type);
+        // v1.53h：性别兼容旧值 'm'/'f'（表单曾存小写）与新值 '男'/'女'，未设性别用中性浅灰（不再黄）
+        const bgCls = c.type === 'birthday'
+          ? ((c.gender === '男' || c.gender === 'm') ? 'bd-m' : (c.gender === '女' || c.gender === 'f') ? 'bd-f' : 'tbg-birthday')
+          : ('tbg-' + c.type);
         const nm = c.type === 'birthday' ? ((c.person || '') + '的' + (info.age != null ? info.age : '?') + '岁生日') : c.name;
         return `<div class="cd-card ${bgCls}${c.top ? ' top' : ''}" data-id="${c.id}">
           <div class="cd-card-main" data-id="${c.id}">
@@ -2628,8 +2634,8 @@
         <div class="cd-field"><label>${isB ? '寿星姓名' : '事件名'}</label><input id="cdName" class="cd-name-in" placeholder="如：${isB ? '小明' : '考研初试'}" value="${esc(isB ? (draft.person || '') : (draft.name || ''))}"></div>
         <div class="cd-field"><label>时间</label><div id="cdPicker">${datePickerHTML(draft)}</div></div>
         ${isB ? `<div class="cd-field"><label>性别</label><div class="cd-cal-seg" id="cdGender">
-          <button type="button" class="cd-seg ${draft.gender === 'm' ? 'on' : ''}" data-g="m">男</button>
-          <button type="button" class="cd-seg ${draft.gender === 'f' ? 'on' : ''}" data-g="f">女</button></div></div>` : ``}
+          <button type="button" class="cd-seg ${(draft.gender === '男' || draft.gender === 'm') ? 'on' : ''}" data-g="男">男</button>
+          <button type="button" class="cd-seg ${(draft.gender === '女' || draft.gender === 'f') ? 'on' : ''}" data-g="女">女</button></div></div>` : ``}
         <div class="cd-field"><label>重复</label>
           <div class="cd-cal-seg" id="cdRepeat">
             ${['none', 'monthly', 'yearly'].map((r) => { const lbl = { none: '无', monthly: '每月重复', yearly: '每年重复' }[r]; return `<button type="button" class="cd-seg ${draft.repeat === r ? 'on' : ''}" data-r="${r}" ${isB && r !== 'yearly' ? 'disabled' : ''}>${lbl}</button>`; }).join('')}
@@ -2649,7 +2655,8 @@
         m.querySelectorAll('#cdGender .cd-seg').forEach((b) => b.onclick = () => { draft.gender = b.dataset.g; m.querySelectorAll('#cdGender .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.g === draft.gender)); });
       }
       m.querySelectorAll('#cdRepeat .cd-seg').forEach((b) => b.onclick = () => { if (b.disabled) return; draft.repeat = b.dataset.r; m.querySelectorAll('#cdRepeat .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.r === draft.repeat)); });
-      m.querySelectorAll('.cd-type-row2 .cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; if (t === 'birthday') draft.repeat = 'yearly'; render(); });
+      // v1.53h：切换类型时按目标类型重置默认重复——生日=每年，其余（倒数日/纪念日/节日）=无；避免从生日切走后「重复」残留「每年」
+      m.querySelectorAll('.cd-type-row2 .cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; draft.repeat = (t === 'birthday') ? 'yearly' : 'none'; render(); });
       m.querySelector('#cdSave').onclick = () => {
         if (isB && !(draft.person || '').trim()) { toast('请填写寿星姓名'); return; }
         if (!isB && !(draft.name || '').trim()) { toast('请填写事件名'); return; }
