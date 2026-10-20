@@ -2420,13 +2420,26 @@
     } else if (SL) {
       const lm = cd.lm, ld = cd.ld, lLeap = cd.lLeap;
       if (cd.repeat === 'none') { const r = SL.lunar2solar(cd.refYear, lm, ld, lLeap); if (!r || r === -1) return null; const d = new Date(r.cYear, r.cMonth - 1, r.cDay); return d >= f ? d : null; }
-      const limit = cd.repeat === 'monthly' ? 430 : 800;
-      for (let i = 0; i <= limit; i++) {
-        const d = new Date(f.getFullYear(), f.getMonth(), f.getDate() + i);
-        const L = SL.solar2lunar(d.getFullYear(), d.getMonth() + 1, d.getDate());
-        if (L === -1) continue;
-        const match = (L.lDay === ld) && (lLeap ? (L.isLeap && L.lMonth === lm) : (L.lMonth === lm && !L.isLeap));
-        if (match) return d;
+      if (cd.repeat === 'monthly') {
+        for (let i = 0; i <= 430; i++) {
+          const d = new Date(f.getFullYear(), f.getMonth(), f.getDate() + i);
+          const L = SL.solar2lunar(d.getFullYear(), d.getMonth() + 1, d.getDate());
+          if (L === -1) continue;
+          const match = (L.lDay === ld) && (lLeap ? (L.isLeap && L.lMonth === lm) : (L.lMonth === lm && !L.isLeap));
+          if (match) return d;
+        }
+        return null;
+      }
+      // v1.53i：yearly 按年直接构造目标农历日——①该年此农历月没有这一天（如 27 年无五月三十）→ 钳到当月最后一天（五月廿九），
+      // 不再跳到下一个有这天的年份；②闰月生日：该年没有对应闰月 → 按普通月算（2006 闰七月初三 → 普通年份按七月初三倒数）
+      for (let y = f.getFullYear(); y <= f.getFullYear() + 3; y++) {
+        const useLeap = lLeap && SL.leapMonth(y) === lm;
+        const maxD = useLeap ? SL.leapDays(y) : SL.monthDays(y, lm);
+        const d2 = Math.max(1, Math.min(ld, maxD));
+        const r = SL.lunar2solar(y, lm, d2, useLeap);
+        if (!r || r === -1) continue;
+        const d = new Date(r.cYear, r.cMonth - 1, r.cDay);
+        if (d >= f) return d;
       }
     }
     return null;
@@ -2453,7 +2466,8 @@
       const by = cd.cal === 'solar' ? new Date(cd.date + 'T00:00:00').getFullYear() : cd.refYear;
       age = occ.getFullYear() - by;   // v1.53g：岁数移到名字行「xx的xx岁生日」
       // v1.53g：农历生日副标题带农历写法（如 2027年5月11日 · 农历四月初八）
-      if (cd.cal === 'lunar') sub += ' · 农历' + lunarMonthName(cd.lm, cd.lLeap) + lunarDayName(cd.ld);
+      // v1.53i：副标题按实际发生的农历日期写（钳到当月最后一天显示廿九；闰月生日普通年显示普通月），不再照抄设置的 lm/ld/lLeap
+      if (cd.cal === 'lunar') { const SLs = globalThis.SolarLunar; if (SLs) { const L = SLs.solar2lunar(occ.getFullYear(), occ.getMonth() + 1, occ.getDate()); if (L && L !== -1) sub += ' · 农历' + lunarMonthName(L.lMonth, L.isLeap) + lunarDayName(L.lDay); } }
     }
     const text = days > 0 ? ('还有 ' + days + ' 天') : '就是今天 🎉';
     return { text, sub, days, age };
@@ -2490,7 +2504,8 @@
     let months = []; for (let m = 1; m <= 12; m++) months.push({ m, leap: false });
     if (leap > 0) months.push({ m: leap, leap: true });
     mSel.innerHTML = months.map((o) => { const v = o.leap ? 'L' + o.m : '' + o.m; const sel = v == (state.lLeap ? 'L' + state.lm : '' + state.lm) ? 'selected' : ''; return `<option value="${v}" ${sel}>${lunarMonthName(o.m, o.leap)}</option>`; }).join('');
-    const days = SL.monthDays(state.refYear, state.lLeap ? leap : state.lm);
+    // v1.53i：闰月的天数要用 leapDays（大/小月与普通月可能不同），普通月仍用 monthDays
+    const days = (state.lLeap && leap === state.lm) ? SL.leapDays(state.refYear) : SL.monthDays(state.refYear, state.lm);
     // v1.53h+：农历「日」选择器改显示农历读法（初一…三十），而非 1日-30日；value 仍存数字，不影响存档
     let opts = ''; for (let d = 1; d <= days; d++) opts += `<option value="${d}" ${d == state.ld ? 'selected' : ''}>${lunarDayName(d)}</option>`;
     dSel.innerHTML = opts;
