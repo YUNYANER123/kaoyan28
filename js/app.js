@@ -1526,16 +1526,15 @@
     }
     document.body.appendChild(rain);
     setTimeout(() => { if (rain.parentNode) rain.parentNode.removeChild(rain); }, 4400);
-    // 内联庆祝条：插到 #enWord 内、单词卡与导航按钮之间（在单词/释义/例句之下，上一个/显示释义/下一个之上）
+    // 内联庆祝条：覆盖「进度条(.wslider，含回到当前)+今日已背(.wc-today)」两行上方
     const host = document.getElementById('enWord');
     if (!host) return;
     let b = document.getElementById('goalDoneBanner');
-    if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-inline'; }
+    if (!b) { b = document.createElement('div'); b.id = 'goalDoneBanner'; b.className = 'goal-done-inline'; document.body.appendChild(b); }
     b.innerHTML = '🎉已完成今日<br>背诵单词目标！';
-    const nav = host.querySelector('.wc-today');
-    if (nav) host.insertBefore(b, nav); else host.appendChild(b);
-    // v1.53c：按用户截图红框——浮层精确覆盖「进度条(.wslider，含回到当前)+今日已背(.wc-today)」两行，
-    // 不写死 top:0（之前浮在屏幕最顶端太高）。用实测 rect 定位，适配不同机型/滚动位置。
+    // v1.53j④：banner 挂到 body（position:fixed 不受 DOM 位置影响），避免 renderEnWord 重渲染 #enWord（点「显示释义」等按钮会触发）时把它 destroy 掉导致提前消失
+    if (b.parentNode !== document.body) document.body.appendChild(b);
+    // v1.53c：按用户截图红框定位（不写死 top:0），用实测 rect 适配不同机型/滚动位置
     const slider = host.querySelector('.wslider');
     const todayRow = host.querySelector('.wc-today');
     if (slider) {
@@ -1549,7 +1548,7 @@
       b.style.minHeight = Math.max(0, t.bottom - r.top) + 'px';
     }
     requestAnimationFrame(() => b.classList.add('show'));
-    setTimeout(() => { b.classList.remove('show'); }, 3200);
+    // v1.53j④：不再用 setTimeout 自动隐藏——只有切换页面(goPage)才隐藏，点其他按钮不会让它消失
   }
 
   // 时间字段样式（仅模式标签）：注入一次，避免改动仓库 styles.css。
@@ -1708,6 +1707,8 @@
   let _pageStack = [];        // 返回键用的页面栈（存放「上一页」id）
   let _suppressStack = false; // 返回驱动跳转时不入栈，避免回退时重复入栈
   function goPage(id) {
+    // v1.53j④：切换页面时关闭单词达标庆祝条（它挂在 body 上、重渲染不会清除，只在离开单词页时收起）
+    const gb = document.getElementById('goalDoneBanner'); if (gb) gb.classList.remove('show');
     if (!_suppressStack && id !== curPage) _pageStack.push(curPage);
     if (_pageStack.length > 30) _pageStack.shift();
     curPage = id;
@@ -2293,7 +2294,20 @@
 .modal.lg{width:100vw;max-width:none;height:100vh;max-height:100vh;border-radius:0;animation:fadeIn .2s ease}
 .modal.lg .modal-top{padding:16px 18px;border-bottom:1px solid var(--line)}
 .modal.lg .modal-x{width:38px;height:38px;font-size:20px;border-radius:11px}
-.modal.lg .modal-body{max-height:none;height:calc(100vh - 64px);overflow-y:auto}`;
+.modal.lg .modal-body{max-height:none;height:calc(100vh - 64px);overflow-y:auto}
+/* v1.53j①：倒数日顶部筛选按钮行（默认全选=高亮全部不选；点击某类筛选，再点取消回全部） */
+.cd-filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.cd-filter-btn{flex:1 1 0;min-width:0;padding:9px 4px;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:700;font-size:13px;border-radius:11px;cursor:pointer;text-align:center;box-sizing:border-box}
+.cd-filter-btn.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
+/* v1.53j③：备忘录列表只读卡片 + 详情页 */
+.memo-card .memo-text{font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;padding:4px 2px;cursor:pointer}
+.memo-card .memo-date{font-size:11px;color:#aaa;margin-top:3px}
+.memo-detail-text{width:100%;min-height:220px;padding:12px;font-size:15px;line-height:1.7;border:1px solid rgba(46,144,232,.3);border-radius:12px;resize:vertical;box-sizing:border-box;font-family:inherit;margin:10px 0}
+.memo-meta{font-size:13px;color:#888;line-height:1.9;background:rgba(46,144,232,.05);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.memo-meta b{color:#555}
+/* v1.53j⑤：生日「节气」选择器 */
+.term-picker{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.term-picker select{padding:8px 6px;border-radius:10px;border:1px solid rgba(46,144,232,.3);font-size:14px;background:#fff;flex:1 1 0;min-width:120px}`;
     document.head.appendChild(st);
   }
   function daysBetween(a, b) {
@@ -2325,6 +2339,16 @@
   function onDocClickCloseMore(e) {
     if (planMoreMenu && !planMoreMenu.classList.contains('hidden') && !planMoreMenu.contains(e.target) && e.target.id !== 'planMore') hidePlanMore();
   }
+  // v1.53j③：备忘日期/时间格式化
+  function fmtDateTs(ts) { const d = new Date(ts); const p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
+  function fmtDateTime(ts) { const d = new Date(ts); const p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
+  function memoDateLabel(x) {
+    // 列表显示「添加」或「最后一次编辑」的日期（取较新者）
+    const addTs = x.ts || x.editTs || Date.now();
+    const editTs = x.editTs || addTs;
+    if (editTs > addTs + 1000) return '✏️ 编辑于 ' + fmtDateTs(editTs);
+    return '📅 添加于 ' + fmtDateTs(addTs);
+  }
   function openMemo() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     injectPlanMoreStyle();
@@ -2353,21 +2377,18 @@
         const shown2 = kw ? all.filter((x) => (x.text || '').toLowerCase().includes(kw))
           : (view === 'all' ? all : all.filter((x) => x.folderId === view));
         const listEl = m.querySelector('#memoList');
+        // v1.53j③：列表只读展示（无内联编辑）；点击卡片进入详情页查看/修改；显示添加或最后编辑日期
         listEl.innerHTML = shown2.length ? shown2.map((x) => {
           const f = (store.memoFolders || []).find((y) => y.id === x.folderId);
-          return `<div class="memo-card">
-          <div class="memo-top"><span class="memo-folder">📁 ${esc(f ? f.name : '')}</span><button class="memo-del" data-id="${x.id}">删除</button></div>
-          <textarea class="memo-edit" data-id="${x.id}" placeholder="写点什么…">${esc(x.text)}</textarea>
+          return `<div class="memo-card" data-id="${x.id}">
+          <div class="memo-top"><span class="memo-folder">📁 ${esc(f ? f.name : '默认')}</span></div>
+          <div class="memo-text">${esc(x.text)}</div>
+          <div class="memo-date">${memoDateLabel(x)}</div>
         </div>`;
         }).join('') : `<div class="hint">${kw ? '没有匹配「' + esc(q.trim()) + '」的备忘' : '这个文件夹还没有备忘，下面添加一条吧～'}</div>`;
-        // 实时保存已有备忘
-        listEl.querySelectorAll('.memo-edit[data-id]').forEach((t) => {
-          t.oninput = () => { const id = t.dataset.id; const it = (store.memos || []).find((x) => x.id === id); if (it) { it.text = t.value; save(); } };
-        });
-        // 删除（搜索态下删除后仍保持过滤视图）
-        listEl.querySelectorAll('.memo-del').forEach((b) => b.onclick = () => {
-          const id = b.dataset.id; const i = (store.memos || []).findIndex((x) => x.id === id);
-          if (i >= 0) { (store.memos).splice(i, 1); save(); drawList(); }
+        // v1.53j③：点击卡片 → 详情页
+        listEl.querySelectorAll('.memo-card[data-id]').forEach((el) => el.onclick = () => {
+          const it = (store.memos || []).find((x) => x.id === el.dataset.id); if (it) openMemoDetail(it);
         });
       };
       drawList();
@@ -2387,10 +2408,43 @@
       m.querySelector('#memoAddBtn').onclick = () => {
         const ta = m.querySelector('#memoNew'); const v = ta.value.trim(); if (!v) { toast('请输入内容'); return; }
         const fid = view === 'all' ? 'default' : view;
-        store.memos.push({ id: uid(), folderId: fid, text: v, ts: Date.now() }); save(); render();
+        // v1.53j③：新增备忘带 ts(添加时间) 与 editTs(最后编辑时间)
+        store.memos.push({ id: uid(), folderId: fid, text: v, ts: Date.now(), editTs: Date.now() }); save(); render();
       };
     };
     render();
+  }
+  // v1.53j③：备忘详情页——只读列表点进来，可在此查看/编辑/删除；显示添加与最后编辑的具体时间 + 字数；× 关闭回列表
+  function openMemoDetail(memo) {
+    if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
+    injectPlanMoreStyle();
+    const f = (store.memoFolders || []).find((y) => y.id === memo.folderId);
+    const addTs = memo.ts || Date.now();
+    const editTs = memo.editTs || addTs;
+    const wc = (memo.text || '').replace(/\s/g, '').length; // 字数（不含空白）
+    openModal('📝 备忘详情', `
+      <div class="memo-meta">
+        📁 文件夹：<b>${esc(f ? f.name : '默认')}</b><br>
+        添加时间：<b>${fmtDateTime(addTs)}</b><br>
+        最后编辑：<b>${fmtDateTime(editTs)}</b><br>
+        字数：<b>${wc}</b>
+      </div>
+      <textarea class="memo-detail-text" id="memoDetailText" placeholder="写点什么…">${esc(memo.text)}</textarea>
+      <div class="btn-row"><button class="gbtn" id="memoDetailSave">保存</button><button class="gbtn" id="memoDetailDel">删除</button></div>`, 'lg');
+    const m = document.getElementById('modalMask'); if (!m) return;
+    window._modalBackTo = openMemo; // × / 点遮罩 → 回列表
+    const xb = m.querySelector('.modal-x');
+    if (xb) xb.onclick = () => { const bk = window._modalBackTo; window._modalBackTo = null; if (bk) bk(); };
+    m.onclick = (e) => { if (e.target === m) { const bk = window._modalBackTo; window._modalBackTo = null; if (bk) bk(); } };
+    m.querySelector('#memoDetailSave').onclick = () => {
+      const ta = m.querySelector('#memoDetailText'); const v = ta.value.trim(); if (!v) { toast('内容不能为空'); return; }
+      const i = (store.memos || []).findIndex((x) => x.id === memo.id);
+      if (i >= 0) { store.memos[i].text = ta.value; store.memos[i].editTs = Date.now(); save(); toast('已保存'); openMemo(); }
+    };
+    m.querySelector('#memoDetailDel').onclick = () => {
+      const i = (store.memos || []).findIndex((x) => x.id === memo.id);
+      if (i >= 0) { store.memos.splice(i, 1); save(); openMemo(); }
+    };
   }
   function openCountdown() { if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; } openCdList(); }
 
@@ -2417,6 +2471,15 @@
       if (cd.repeat === 'none') return base >= f ? base : null;
       if (cd.repeat === 'yearly') { let y = f.getFullYear(); let c = new Date(y, base.getMonth(), base.getDate()); if (c < f) c = new Date(y + 1, base.getMonth(), base.getDate()); return c; }
       if (cd.repeat === 'monthly') { let y = f.getFullYear(), mo = f.getMonth(); let c = new Date(y, mo, base.getDate()); while (c < f) { mo++; if (mo > 11) { mo = 0; y++; } c = new Date(y, mo, base.getDate()); } return c; }
+    } else if (cd.cal === 'term') {
+      // v1.53j⑤：节气生日——每年此节气当天过；节气 n 的月份 = ceil(n/2)，日 = SL.getTerm(y,n)；取下一个未到的节气日
+      if (!SL || !cd.term) return null;
+      const month = Math.ceil(cd.term / 2);
+      let y = f.getFullYear();
+      let day = SL.getTerm(y, cd.term);
+      let c = day > 0 ? new Date(y, month - 1, day) : null;
+      if (!c || c < f) { day = SL.getTerm(y + 1, cd.term); c = day > 0 ? new Date(y + 1, month - 1, day) : null; }
+      return c;
     } else if (SL) {
       const lm = cd.lm, ld = cd.ld, lLeap = cd.lLeap;
       if (cd.repeat === 'none') { const r = SL.lunar2solar(cd.refYear, lm, ld, lLeap); if (!r || r === -1) return null; const d = new Date(r.cYear, r.cMonth - 1, r.cDay); return d >= f ? d : null; }
@@ -2451,7 +2514,10 @@
     if (!occ) {
       let base = null;
       if (cd.cal === 'solar') base = new Date(cd.date + 'T00:00:00');
-      else {
+      else if (cd.cal === 'term') {
+        const SL = globalThis.SolarLunar;
+        if (SL && cd.term) { const month = Math.ceil(cd.term / 2); const day = SL.getTerm(cd.refYear, cd.term); if (day > 0) base = new Date(cd.refYear, month - 1, day); }
+      } else {
         const SL = globalThis.SolarLunar;
         if (SL) { const r = SL.lunar2solar(cd.refYear, cd.lm, cd.ld, cd.lLeap); if (r && r !== -1) base = new Date(r.cYear, r.cMonth - 1, r.cDay); }
       }
@@ -2468,6 +2534,8 @@
       // v1.53g：农历生日副标题带农历写法（如 2027年5月11日 · 农历四月初八）
       // v1.53i：副标题按实际发生的农历日期写（钳到当月最后一天显示廿九；闰月生日普通年显示普通月），不再照抄设置的 lm/ld/lLeap
       if (cd.cal === 'lunar') { const SLs = globalThis.SolarLunar; if (SLs) { const L = SLs.solar2lunar(occ.getFullYear(), occ.getMonth() + 1, occ.getDate()); if (L && L !== -1) sub += ' · 农历' + lunarMonthName(L.lMonth, L.isLeap) + lunarDayName(L.lDay); } }
+      // v1.53j⑤：节气生日副标题追加节气名（如 2027年6月21日 · 夏至）
+      if (cd.cal === 'term' && cd.term) { sub += ' · ' + (CD_TERM_NAMES[cd.term - 1] || ''); }
     }
     const text = days > 0 ? ('还有 ' + days + ' 天') : '就是今天 🎉';
     return { text, sub, days, age };
@@ -2519,16 +2587,24 @@
   }
   const CD_WHEEL_H = 44;   // 滚轮行高（与 .cd-wheel-item/.cd-wheel-pad 的 44px 对应）
   function datePickerHTML(state) {
+    // v1.53j⑤：生日类型下额外提供「节气」分类（每年此节气当天过生日，公历/农历无法固定日期）
+    const isB = state.type === 'birthday';
+    const termSeg = isB ? `<button type="button" class="cd-seg ${state.cal === 'term' ? 'on' : ''}" data-cal="term">节气</button>` : '';
     return `
     <div class="cd-picker-wrap">
       <div class="cd-cal-seg">
         <button type="button" class="cd-seg ${state.cal === 'solar' ? 'on' : ''}" data-cal="solar">公历</button>
         <button type="button" class="cd-seg ${state.cal === 'lunar' ? 'on' : ''}" data-cal="lunar">农历</button>
+        ${termSeg}
       </div>
       <div class="cd-datebox">
-        <div class="cd-wheel solar-only" ${state.cal === 'lunar' ? 'style="display:none"' : ''}></div>
-        <div class="lunar-picker lunar-only" ${state.cal === 'solar' ? 'style="display:none"' : ''}>
+        <div class="cd-wheel solar-only" ${state.cal === 'lunar' || state.cal === 'term' ? 'style="display:none"' : ''}></div>
+        <div class="lunar-picker lunar-only" ${state.cal === 'solar' || state.cal === 'term' ? 'style="display:none"' : ''}>
           <select class="lunar-year"></select><select class="lunar-month"></select><select class="lunar-day"></select>
+        </div>
+        <div class="term-picker term-only" ${state.cal !== 'term' ? 'style="display:none"' : ''}>
+          <select class="term-year"></select>
+          <select class="term-name"></select>
         </div>
       </div>
     </div>`;
@@ -2579,17 +2655,35 @@
     seg.forEach((b) => b.onclick = () => {
       state.cal = b.dataset.cal;
       seg.forEach((x) => x.classList.toggle('on', x.dataset.cal === state.cal));
-      const so = m.querySelector('.solar-only'), lo = m.querySelector('.lunar-only');
+      const so = m.querySelector('.solar-only'), lo = m.querySelector('.lunar-only'), to = m.querySelector('.term-only');
       if (so) so.style.display = state.cal === 'solar' ? '' : 'none';
       if (lo) lo.style.display = state.cal === 'lunar' ? '' : 'none';
+      if (to) to.style.display = state.cal === 'term' ? '' : 'none';
       if (state.cal === 'lunar') initLunarPicker(m.querySelector('.lunar-only'), state, type);
+      if (state.cal === 'term') initTermPicker(m.querySelector('.term-only'), state, type);
     });
     const so = wrap.querySelector('.solar-only');
     if (so && state.cal === 'solar') initSolarWheel(so, state, type);
     if (state.cal === 'lunar') initLunarPicker(m.querySelector('.lunar-only'), state, type);
+    if (state.cal === 'term') initTermPicker(m.querySelector('.term-only'), state, type);
+  }
+  // v1.53j⑤：节气生日选择器——选出生年份 + 24 节气；节气日期由 SolarLunar.getTerm 计算（month=ceil(n/2)）
+  const CD_TERM_NAMES = ['小寒', '大寒', '立春', '雨水', '惊蛰', '春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至', '小暑', '大暑', '立秋', '处暑', '白露', '秋分', '寒露', '霜降', '立冬', '小雪', '大雪', '冬至'];
+  function initTermPicker(root, state, type) {
+    const SL = globalThis.SolarLunar; if (!SL) return;
+    const ySel = root.querySelector('.term-year'), nSel = root.querySelector('.term-name');
+    const lo = 1926, hi = (type === 'birthday' ? new Date().getFullYear() : 2126); // 出生不可能在未来，生日年份只到当前年
+    if (!state.refYear) state.refYear = new Date().getFullYear();
+    if (!state.term) state.term = 12; // 默认夏至
+    ySel.innerHTML = Array.from({ length: hi - lo + 1 }, (_, i) => { const y = lo + i; return `<option value="${y}" ${y == state.refYear ? 'selected' : ''}>${y}年（${SL.getAnimal(y)}）</option>`; }).join('');
+    nSel.innerHTML = CD_TERM_NAMES.map((nm, i) => `<option value="${i + 1}" ${i + 1 == state.term ? 'selected' : ''}>${nm}</option>`).join('');
+    ySel.onchange = () => { state.refYear = +ySel.value; };
+    nSel.onchange = () => { state.term = +nSel.value; };
   }
   function openCdList() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
+    // v1.53j①：顶部筛选——默认 cdFilter=null 显示全部；点击某类筛选，再次点击同一类取消回全部
+    let cdFilter = null;
     const render = () => {
       // v1.53f：先按置顶（top 的强制最前），置顶组内部与非置顶组一样按剩余天数排序
       const list = (store.countdowns || []).slice().sort((a, b) => {
@@ -2597,7 +2691,8 @@
         if (ta !== tb) return ta - tb;
         return cdSortVal(a) - cdSortVal(b);
       });
-      const items = list.length ? list.map((c) => {
+      const shown = cdFilter ? list.filter((c) => c.type === cdFilter) : list;
+      const items = shown.length ? shown.map((c) => {
         const info = cdListInfo(c); const t = CD_TYPES[c.type] || CD_TYPES.countdown;
         // v1.53g：四类卡片浅色底（生日按性别 男浅蓝/女浅粉/未填浅黄）+ 生日名字行带岁数
         // v1.53h：性别兼容旧值 'm'/'f'（表单曾存小写）与新值 '男'/'女'，未设性别用中性浅灰（不再黄）
@@ -2614,14 +2709,19 @@
           <div class="cd-right ${(info.days === null ? '' : (info.days < 0 ? 'past' : 'has'))}">${esc(info.text)}</div>
           <button class="cd-more" data-id="${c.id}">⋯</button>
         </div>`;
-      }).join('') : '<div class="hint">还没有倒数日，点下方「添加」新建一个吧～</div>';
+      }).join('') : '<div class="hint">这个分类下还没有倒数日，点上方「添加」新建一个吧～</div>';
+      // v1.53j①：筛选按钮行（默认全选态=不高亮任何一类）+ 「添加」移到筛选行与列表之间（不再沉到列表最底）
+      const filterRow = `<div class="cd-filter-row">${['countdown', 'memorial', 'birthday', 'festival'].map((k) => `<button type="button" class="cd-filter-btn ${cdFilter === k ? 'on' : ''}" data-f="${k}">${CD_TYPES[k].icon} ${CD_TYPES[k].label}</button>`).join('')}</div>`;
       openModal('📆 倒数日', `
-        <div class="cd-list">${items}</div>
-        <div class="btn-row"><button class="gbtn" id="cdAddNew">＋ 添加倒数日</button></div>`, 'lg');
+        ${filterRow}
+        <div class="btn-row"><button class="gbtn" id="cdAddNew">＋ 添加倒数日</button></div>
+        <div class="cd-list">${items}</div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
       m.querySelectorAll('.cd-card-main').forEach((el) => el.onclick = () => { const c = (store.countdowns || []).find((x) => x.id === el.dataset.id); if (c) openCdDetail(c); });
       m.querySelectorAll('.cd-more').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openCdItemMenu(b.dataset.id, b); });
       m.querySelector('#cdAddNew').onclick = () => openCdAdd();
+      // v1.53j①：筛选切换
+      m.querySelectorAll('.cd-filter-btn').forEach((b) => b.onclick = () => { const f = b.dataset.f; cdFilter = (cdFilter === f) ? null : f; render(); });
     };
     render();
   }
@@ -2670,12 +2770,13 @@
         m.querySelectorAll('#cdGender .cd-seg').forEach((b) => b.onclick = () => { draft.gender = b.dataset.g; m.querySelectorAll('#cdGender .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.g === draft.gender)); });
       }
       m.querySelectorAll('#cdRepeat .cd-seg').forEach((b) => b.onclick = () => { if (b.disabled) return; draft.repeat = b.dataset.r; m.querySelectorAll('#cdRepeat .cd-seg').forEach((x) => x.classList.toggle('on', x.dataset.r === draft.repeat)); });
-      // v1.53h：切换类型时按目标类型重置默认重复——生日=每年，其余（倒数日/纪念日/节日）=无；避免从生日切走后「重复」残留「每年」
-      m.querySelectorAll('.cd-type-row2 .cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; draft.repeat = (t === 'birthday') ? 'yearly' : 'none'; render(); });
+      // v1.53h：切换类型时按目标类型重置默认重复——生日=每年，其余（倒数日/纪念日/节日）=无；v1.53j⑤：非生日不能选「节气」
+      m.querySelectorAll('.cd-type-row2 .cd-type-btn').forEach((b) => b.onclick = () => { const t = b.dataset.t; if (t === draft.type) return; draft.type = t; draft.repeat = (t === 'birthday') ? 'yearly' : 'none'; if (t !== 'birthday' && draft.cal === 'term') draft.cal = 'solar'; render(); });
       m.querySelector('#cdSave').onclick = () => {
         if (isB && !(draft.person || '').trim()) { toast('请填写寿星姓名'); return; }
         if (!isB && !(draft.name || '').trim()) { toast('请填写事件名'); return; }
-        const ok = (draft.cal === 'solar' ? draft.date : (draft.lm && draft.ld));
+        // v1.53j⑤：节气生日 = 出生年份 + 节气
+        const ok = (draft.cal === 'solar' ? draft.date : draft.cal === 'lunar' ? (draft.lm && draft.ld) : (draft.term && draft.refYear));
         if (!ok) { toast('请选择时间'); return; }
         if (isB && !draft.gender) { toast('请选择性别'); return; }
         store.countdowns = store.countdowns || [];
