@@ -975,6 +975,7 @@
       memoFolders: [{ id: 'default', name: '默认文件夹' }],
       memos: [],                   // 📝 备忘录：[{id,folderId,text,ts}]
       countdowns: [],              // 📆 倒数日：富类型（见 openCdEdit）
+      widgetCd: { cd1: [], cd2: [], cd4: [] },  // 🖥️ v1.53m③：三个倒数日桌面组件各自要显示的倒数日 id（空数组=自动取前 N 个）
       majorData: {},               // {bookName: {points:[{t,c}], choice:[{q,o,k,s,src}], judge:[{q,a,s,src}], short:[{q,a,src}]}}
       aiBank: {},                  // AI 扩充题库 {key:[条目]}，英语/数学/专业课通用
       aiShown: {},                 // {key:{d,ids,seen}} 已展示过的条目，用于「刷完一轮才重复」
@@ -1066,6 +1067,14 @@
       top: !!(c && c.top),
       ts: (c && c.ts) || Date.now(),
     }));
+    // v1.53m③：三个倒数日桌面组件的显示选择（空数组=自动按列表顺序取前 N 个）；顺手剔除已删除倒数日的残留 id
+    const _wcd = (s.widgetCd && typeof s.widgetCd === 'object') ? s.widgetCd : {};
+    const _cdIds = {}; merged.countdowns.forEach((c) => { _cdIds[c.id] = 1; });
+    merged.widgetCd = {
+      cd1: (Array.isArray(_wcd.cd1) ? _wcd.cd1 : []).filter((x) => _cdIds[x]),
+      cd2: (Array.isArray(_wcd.cd2) ? _wcd.cd2 : []).filter((x) => _cdIds[x]),
+      cd4: (Array.isArray(_wcd.cd4) ? _wcd.cd4 : []).filter((x) => _cdIds[x]),
+    };
     if (merged.examDate && merged.examDate.length >= 10) {
       merged.examDate = merged.examDate.slice(0, 10) + 'T00:00:00';
     }
@@ -1273,6 +1282,7 @@
       // 顶层保留「今天」的每日数据作为兜底（老版本原生 / days 缺失时回退到今天）
       plan: today.plan, life: today.life, spellPool: today.spellPool,
       math: today.math, majorPoints: today.majorPoints, majorQuiz: today.majorQuiz,
+      cdWidgets: today.cdWidgets,   // v1.53m③：倒数日组件（老原生 / days 缺失时兜底用今天）
       words: words
     };
   }
@@ -1366,7 +1376,10 @@
       majQuiz = { choiceCount: cItems.length, judgeCount: jItems.length, questions: cItems.concat(jItems) };
     } catch (e) {}
 
-    return { plan: plan, life: life, spellPool: spellPool, math: math, majorPoints: majPoints, majorQuiz: majQuiz };
+    // 6) v1.53m③：三个倒数日桌面组件的数据（按该组件的选择取，天数按 ds 这一天算）
+    const cdWidgets = { cd1: cdWidgetPick(1, ds), cd2: cdWidgetPick(2, ds), cd4: cdWidgetPick(4, ds) };
+
+    return { plan: plan, life: life, spellPool: spellPool, math: math, majorPoints: majPoints, majorQuiz: majQuiz, cdWidgets: cdWidgets };
   }
 
   function applyWidgetActions(actions) {
@@ -1511,6 +1524,7 @@
 .goal-done-inline.show{visibility:visible;opacity:1;transform:scale(1)}`;
     document.head.appendChild(st);
   }
+  let _goalBannerT = null;
   function celebrateGoalDone() {
     injectCelebrateStyle();
     // 满屏 🎉 下落（装饰用，pointer-events:none 不挡操作）
@@ -1548,7 +1562,11 @@
       b.style.minHeight = Math.max(0, t.bottom - r.top) + 'px';
     }
     requestAnimationFrame(() => b.classList.add('show'));
-    // v1.53j④：不再用 setTimeout 自动隐藏——只有切换页面(goPage)才隐藏，点其他按钮不会让它消失
+    // v1.53m②：恢复原本的自动消失时长(3200ms)。banner 仍挂在 body 上，点「显示释义」等按钮触发 renderEnWord
+    // 重渲染 #enWord 时不会被 destroy，所以不会因点其他按钮而提前消失；仅切页(goPage)主动收起。
+    // 重复触发时先清掉上一个 timer，避免旧 timer 把新弹出的庆祝条提前收掉。
+    if (_goalBannerT) clearTimeout(_goalBannerT);
+    _goalBannerT = setTimeout(() => { b.classList.remove('show'); _goalBannerT = null; }, 3200);
   }
 
   // 时间字段样式（仅模式标签）：注入一次，避免改动仓库 styles.css。
@@ -2300,7 +2318,7 @@
 .cd-filter-btn{flex:1 1 0;min-width:0;padding:9px 4px;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:700;font-size:13px;border-radius:11px;cursor:pointer;text-align:center;box-sizing:border-box}
 .cd-filter-btn.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
 /* v1.53j③：备忘录列表只读卡片 + 详情页 */
-.memo-card .memo-text{font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;padding:4px 2px;cursor:pointer}
+.memo-card .memo-text{font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;padding:4px 2px;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-height:calc(1.6em + 8px)}
 .memo-card .memo-date{font-size:11px;color:#aaa;margin-top:3px}
 .memo-detail-text{width:100%;min-height:220px;padding:12px;font-size:15px;line-height:1.7;border:1px solid rgba(46,144,232,.3);border-radius:12px;resize:vertical;box-sizing:border-box;font-family:inherit;margin:10px 0}
 .memo-meta{font-size:13px;color:#888;line-height:1.9;background:rgba(46,144,232,.05);border-radius:10px;padding:10px 12px;margin-bottom:12px}
@@ -2382,7 +2400,7 @@
           const f = (store.memoFolders || []).find((y) => y.id === x.folderId);
           return `<div class="memo-card" data-id="${x.id}">
           <div class="memo-top"><span class="memo-folder">📁 ${esc(f ? f.name : '默认')}</span></div>
-          <div class="memo-text">${esc(x.text)}</div>
+          <div class="memo-text">${esc((x.text || '').replace(/\s+/g, ' ').trim())}</div>
           <div class="memo-date">${memoDateLabel(x)}</div>
         </div>`;
         }).join('') : `<div class="hint">${kw ? '没有匹配「' + esc(q.trim()) + '」的备忘' : '这个文件夹还没有备忘，下面添加一条吧～'}</div>`;
@@ -2507,9 +2525,11 @@
     }
     return null;
   }
-  function cdListInfo(cd) {
-    const occ = cdNextOccurrence(cd);
-    const today0 = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  // v1.53m③：ref 为可选参考日期（桌面组件要按未来某一天算天数），不传=今天
+  function cdListInfo(cd, ref) {
+    const refD = ref || new Date();
+    const occ = cdNextOccurrence(cd, refD);
+    const today0 = new Date(refD.getFullYear(), refD.getMonth(), refD.getDate());
     // v1.53d：无重复且已过去 → 右侧统一显示「已经 xx 天」（含农历）
     if (!occ) {
       let base = null;
@@ -2541,8 +2561,8 @@
     return { text, sub, days, age };
   }
   // v1.53f：列表排序键——置顶另算；未发生 days 升序在前，已过去按 abs 升序且整体在后
-  function cdSortVal(cd) {
-    const d = cdListInfo(cd).days;
+  function cdSortVal(cd, ref) {
+    const d = cdListInfo(cd, ref).days;
     if (d === null) return 1e9;        // 无天数信息（无法计算）→ 沉底
     if (d >= 0) return d;              // 未发生：0(今天)..N，越近越前
     return 1e7 + (-d);                 // 已过去：整体排在 1e7 之后（大于任何未发生天数，2126 上限约 36500 天），内部 abs 越小（越近过去）越前
@@ -2680,6 +2700,117 @@
     ySel.onchange = () => { state.refYear = +ySel.value; };
     nSel.onchange = () => { state.term = +nSel.value; };
   }
+  /* ===== v1.53m③：倒数日桌面组件 ===== */
+  // 四类底色（与网页卡片一致，取「叠在白色卡片上」后的实色，供原生 RemoteViews 直接 setBackgroundColor）
+  function cdTypeBgInt(c) {
+    if (c.type === 'birthday') {
+      if (c.gender === '男' || c.gender === 'm') return 0xFFECF5FD;
+      if (c.gender === '女' || c.gender === 'f') return 0xFFFDF0F3;
+      return 0xFFF5F5F5;
+    }
+    if (c.type === 'memorial') return 0xFFFFF3E8;
+    if (c.type === 'festival') return 0xFFF5F0FC;
+    return 0xFFEAF5ED;   // countdown 浅绿
+  }
+  function cdSortedAll(ref) {
+    return (store.countdowns || []).slice().sort((a, b) => {
+      const ta = a.top ? 0 : 1, tb = b.top ? 0 : 1;
+      if (ta !== tb) return ta - tb;
+      return cdSortVal(a, ref) - cdSortVal(b, ref);
+    });
+  }
+  // 单个倒数日 → 组件行数据（dnum/dunit 拆开，原生端大号数字 + 小号单位）
+  function cdWidgetItem(c, ref) {
+    const info = cdListInfo(c, ref);
+    const t = CD_TYPES[c.type] || CD_TYPES.countdown;
+    const nm = c.type === 'birthday'
+      ? ((c.person || '') + '的' + (info.age != null ? info.age : '?') + '岁生日')
+      : (c.name || '');
+    const d = info.days;
+    const dnum = (d === null) ? '—' : (d === 0 ? '今天' : String(Math.abs(d)));
+    const dunit = (d === null) ? '' : (d === 0 ? '🎉' : (d > 0 ? '天后' : '天前'));
+    return { icon: t.icon, name: nm, sub: info.sub || '', dnum: dnum, dunit: dunit, bg: cdTypeBgInt(c) };
+  }
+  // 第 n 型组件（1/2/4）在 ds 这一天要显示的倒数日
+  function cdWidgetPick(n, ds) {
+    const refD = new Date(ds + 'T00:00:00');
+    const all = cdSortedAll(refD);
+    let list = [];
+    const sel = ((store.widgetCd || {})['cd' + n] || []).filter(Boolean);
+    if (sel.length) {
+      const map = {}; all.forEach((c) => { map[c.id] = c; });
+      list = sel.map((id) => map[id]).filter(Boolean);
+    }
+    if (!list.length) list = all;           // 未配置 → 自动按列表顺序取前 N 个
+    return list.slice(0, n).map((c) => cdWidgetItem(c, refD));
+  }
+  let _cdwStyleDone = false;
+  function injectCdWidgetStyle() {
+    if (_cdwStyleDone) return; _cdwStyleDone = true;
+    const st = document.createElement('style');
+    st.textContent = `
+.cdw-box{border:1px solid rgba(46,144,232,.16);border-radius:14px;padding:10px 11px;margin-bottom:12px;background:rgba(46,144,232,.04)}
+.cdw-h{display:flex;align-items:center;justify-content:space-between;font-size:13.5px;font-weight:800;color:#2F80ED;margin-bottom:8px}
+.cdw-n{font-size:11px;font-weight:700;color:#8aa0b5}
+.cdw-list{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.cdw-item{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:10px;cursor:pointer;font-size:13px;color:#333}
+.cdw-item input{width:17px;height:17px;flex:0 0 auto;accent-color:#2F80ED}
+.cdw-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cdw-item.on{background:rgba(46,144,232,.12);font-weight:700}
+.cdw-auto{margin-top:8px}
+.cdw-auto .hint{margin:0;font-size:11.5px}
+.cdw-auto-btn{width:100%;height:34px;border:1px dashed rgba(46,144,232,.45);background:#fff;color:#2F80ED;font-weight:700;font-size:12.5px;border-radius:10px;cursor:pointer}
+.cdw-tip{font-size:11.5px;color:#8aa0b5;line-height:1.7}`;
+    document.head.appendChild(st);
+  }
+  const CDW_LABEL = { 1: '倒数日（1 个）', 2: '倒数日（2 个）', 4: '倒数日（4 个）' };
+  function openCdWidgetCfg() {
+    injectCdWidgetStyle();
+    if (!store.widgetCd) store.widgetCd = { cd1: [], cd2: [], cd4: [] };
+    const render = () => {
+      const all = cdSortedAll(null);
+      const body = [1, 2, 4].map((n) => {
+        const sel = store.widgetCd['cd' + n] || [];
+        const shown = sel.length ? Math.min(sel.length, n) : Math.min(n, all.length);
+        const rows = all.length ? all.map((c) => {
+          const t = CD_TYPES[c.type] || CD_TYPES.countdown;
+          const on = sel.indexOf(c.id) >= 0;
+          const nm = c.type === 'birthday' ? ((c.person || '') + '的生日') : (c.name || '');
+          return `<label class="cdw-item ${on ? 'on' : ''}"><input type="checkbox" data-n="${n}" data-id="${c.id}" ${on ? 'checked' : ''}><span>${t.icon} ${esc(nm || '(未命名)')}</span></label>`;
+        }).join('') : '<div class="hint">还没有倒数日，先添加一个吧～</div>';
+        return `<div class="cdw-box">
+          <div class="cdw-h">🖥️ ${CDW_LABEL[n]}<span class="cdw-n">显示 ${shown}/${n}</span></div>
+          <div class="cdw-list">${rows}</div>
+          <div class="cdw-auto">${sel.length
+            ? `<button type="button" class="cdw-auto-btn" data-auto="${n}">恢复自动（按列表顺序取前 ${n} 个）</button>`
+            : '<div class="hint">当前：自动（按列表顺序取前 ' + n + ' 个）</div>'}</div>
+        </div>`;
+      }).join('');
+      openModal('🖥️ 桌面组件显示设置', `
+        <div class="cdw">${body}
+        <div class="cdw-tip">三个组件分别是 2×2（1 个）/ 4×2（2 个）/ 4×3（4 个）。不勾选就是「自动」，按倒数日列表的顺序取前 N 个。设置后回到桌面，组件会自动刷新。</div>
+        <div class="btn-row"><button class="gbtn" id="cdwDone">完成</button></div>
+      </div>`, 'lg');
+      const m = document.getElementById('modalMask'); if (!m) return;
+      m.querySelectorAll('.cdw-item input').forEach((cb) => cb.onchange = () => {
+        const k = 'cd' + cb.dataset.n; const id = cb.dataset.id;
+        const arr = (store.widgetCd[k] || []).slice();
+        const i = arr.indexOf(id);
+        if (i >= 0) arr.splice(i, 1);
+        else {
+          if (arr.length >= +cb.dataset.n) { toast('这个组件最多显示 ' + cb.dataset.n + ' 个，请先取消一个'); render(); return; }
+          arr.push(id);
+        }
+        store.widgetCd[k] = arr; save(); render();
+      });
+      m.querySelectorAll('[data-auto]').forEach((b) => b.onclick = () => {
+        store.widgetCd['cd' + b.dataset.auto] = []; save(); render();
+      });
+      const done = m.querySelector('#cdwDone');
+      if (done) done.onclick = () => { save(); const mk = document.getElementById('modalMask'); if (mk) mk.classList.add('hidden'); };
+    };
+    render();
+  }
   function openCdList() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     // v1.53j①：顶部筛选——默认 cdFilter=null 显示全部；点击某类筛选，再次点击同一类取消回全部
@@ -2715,13 +2846,15 @@
       openModal('📆 倒数日', `
         ${filterRow}
         <div class="btn-row"><button class="gbtn" id="cdAddNew">＋ 添加倒数日</button></div>
+        <div class="cd-filter-row"><button type="button" class="cd-filter-btn" id="cdWcfg">🖥️ 桌面组件显示设置</button></div>
         <div class="cd-list">${items}</div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
       m.querySelectorAll('.cd-card-main').forEach((el) => el.onclick = () => { const c = (store.countdowns || []).find((x) => x.id === el.dataset.id); if (c) openCdDetail(c); });
       m.querySelectorAll('.cd-more').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openCdItemMenu(b.dataset.id, b); });
       m.querySelector('#cdAddNew').onclick = () => openCdAdd();
+      m.querySelector('#cdWcfg').onclick = () => openCdWidgetCfg();
       // v1.53j①：筛选切换
-      m.querySelectorAll('.cd-filter-btn').forEach((b) => b.onclick = () => { const f = b.dataset.f; cdFilter = (cdFilter === f) ? null : f; render(); });
+      m.querySelectorAll('.cd-filter-btn[data-f]').forEach((b) => b.onclick = () => { const f = b.dataset.f; cdFilter = (cdFilter === f) ? null : f; render(); });
     };
     render();
   }
@@ -3806,6 +3939,7 @@
   }
   let enRevealed = false;   // 当前单词释义是否已揭示：仅在当前单词有效，离开（上一个/下一个/跳转/滑条）即重置，不跨单词持久化
   function renderEnWord() {
+    injectWordClearStyle();   // v1.53m④：统计框+垃圾桶样式，首屏也要生效（_done 守卫，重复安全）
     const host = $('#enWord');
     const ws = store.words;
     const idx = clamp(ws.idx, 0, EN_WORDS.length - 1);
@@ -3838,7 +3972,10 @@
         <input type="range" id="wordSlider" class="wslider-range" min="0" max="${EN_WORDS.length - 1}" value="${idx}">
         <button class="ws-jump" data-w="jumpcur">↺ 回到当前</button>
       </div>
-      <div class="wc-today">📅 今日已背 <b>${todayCnt}</b> 个 · 累计已学 <b>${ws.learned.length}</b> 个${store.goals.word ? ` · 目标 <b>${store.goals.word}</b> 个` : ''}</div>
+      <div class="wc-today-row">
+        <div class="wc-today">📅 今日已背 <b>${todayCnt}</b> 个 · 累计已学 <b>${ws.learned.length}</b> 个${store.goals.word ? ` · 目标 <b>${store.goals.word}</b> 个` : ''}</div>
+        <button class="wc-trash" data-w="clearwords" title="清除单词数据" aria-label="清除单词数据">🗑️</button>
+      </div>
       <div class="word-nav">
         <button data-w="prev">上一个</button>
         <button class="main ${revealed ? 'on' : ''}" data-w="reveal">${revealed ? '隐藏释义' : '显示释义'}</button>
@@ -3921,8 +4058,81 @@
     if (spBtn) spBtn.onclick = () => openSpellPage();
     const rfb = host.querySelector('[data-w="refresh"]');
     if (rfb) rfb.onclick = () => { ws.idx = 0; ws.learned = []; save(); renderEnWord(); toast('已重置，从头开始背 🐱', 'main'); };
+    // v1.53m④：统计框右侧垃圾桶 → 两级确认清除单词数据
+    const clrBtn = host.querySelector('[data-w="clearwords"]');
+    if (clrBtn) clrBtn.onclick = () => openWordClearMenu();
   }
   function totalWords() { return Object.values(store.dailyStudy).reduce((s, x) => s + (x.en.wordCount || 0), 0); }
+
+  /* ===== v1.53m④：清除单词数据（统计框右侧垃圾桶，两级确认防误删） ===== */
+  let _wcClearStyleInjected = false;
+  function injectWordClearStyle() {
+    if (_wcClearStyleInjected) return; _wcClearStyleInjected = true;
+    const st = document.createElement('style');
+    st.textContent = `
+.wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
+.wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
+.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.07);border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#5b7c99;padding:0}
+.wc-trash:active{transform:scale(.93)}
+.wc-clear-tip{font-size:12.5px;color:#777;margin-bottom:12px;line-height:1.6}
+.wc-clear-btn{display:block;width:100%;text-align:left;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.06);border-radius:14px;padding:11px 12px;margin-bottom:10px;cursor:pointer}
+.wc-clear-btn b{display:block;font-size:13.5px;color:#2F80ED;margin-bottom:4px}
+.wc-clear-btn span{display:block;font-size:11.5px;color:#888;line-height:1.6}
+.wc-clear-btn:active{transform:scale(.98)}
+.wc-clear-cancel{display:block;width:100%;height:42px;border:none;border-radius:12px;background:#f2f4f7;color:#666;font-weight:800;cursor:pointer}
+.wc-cf-tip{font-size:13.5px;color:#444;line-height:1.7}
+.wc-cf-tip b{color:#d14d7a}
+.wc-cf-warn{font-size:11.5px;color:#999;line-height:1.7;margin-top:8px}
+.wc-cf-row{display:flex;gap:10px;margin-top:14px}
+.wc-cf-cancel,.wc-cf-del{flex:1 1 0;height:42px;border:none;border-radius:12px;font-weight:800;cursor:pointer}
+.wc-cf-cancel{background:#f2f4f7;color:#666}
+.wc-cf-del{background:#ffd1e0;color:#d14d7a}
+.wc-cf-del:active{transform:scale(.97)}`;
+    document.head.appendChild(st);
+  }
+  function closeWordModal() { const mk = document.getElementById('modalMask'); if (mk) mk.classList.add('hidden'); }
+  function openWordClearMenu() {
+    openModal('🗑 清除单词数据', `
+      <div class="wc-clear">
+        <div class="wc-clear-tip">请选择要清除的范围（<b>不可恢复</b>，请谨慎操作）：</div>
+        <button class="wc-clear-btn" data-clear="1"><b>① 仅清除已背单词数据</b><span>可以从头再背单词。已标星的单词不受影响，三轮强化记忆板块的数据也都还在，之前标过星的单词仍然在一轮强化库中。</span></button>
+        <button class="wc-clear-btn" data-clear="2"><b>② 清除已背单词及三轮强化数据</b><span>从头背单词，且三轮强化记忆板块的库被清空、标星记录也全部清除；单词需要重新标星才会进入一轮强化池。</span></button>
+        <button class="wc-clear-cancel" data-clear="0">取消</button>
+      </div>`);
+    const mask = document.getElementById('modalMask'); if (!mask) return;
+    mask.querySelectorAll('[data-clear]').forEach((btn) => btn.onclick = () => {
+      const v = btn.dataset.clear;
+      if (v === '0') { closeWordModal(); return; }
+      openWordClearConfirm(v);
+    });
+  }
+  function openWordClearConfirm(mode) {
+    const full = (mode === '2');
+    const what = full ? '已背单词及三轮强化数据' : '已背单词数据';
+    openModal('⚠️ 确认删除', `
+      <div class="wc-cf">
+        <div class="wc-cf-tip">确定删除<b>${what}</b>吗？</div>
+        <div class="wc-cf-warn">${full
+          ? '删除后：已从第一个单词重新开始背，三轮强化库清空，标星记录也清空（需重新标星才会进入一轮强化池）。'
+          : '删除后：已从第一个单词重新开始背；标星单词与三轮强化记忆板块的数据保持不变。'}此操作不可恢复。</div>
+        <div class="wc-cf-row">
+          <button class="wc-cf-cancel" data-cf="0">取消</button>
+          <button class="wc-cf-del" data-cf="1">确认删除</button>
+        </div>
+      </div>`);
+    const mask = document.getElementById('modalMask'); if (!mask) return;
+    mask.querySelector('[data-cf="0"]').onclick = () => closeWordModal();
+    mask.querySelector('[data-cf="1"]').onclick = () => {
+      const ws2 = store.words;
+      ws2.idx = 0;
+      ws2.learned = [];
+      if (full) { ws2.favs = []; ws2.rounds = [[], [], []]; ws2.ultimate = []; ws2.revealed = []; }
+      save();
+      closeWordModal();
+      renderEnWord();
+      toast(full ? '已清除已背单词与三轮强化数据，从头开始 🐱' : '已清除已背单词数据，从头开始背 🐱', 'main');
+    };
+  }
 
   /* ===== 随机拼写 ===== */
   function openSpellPage() {

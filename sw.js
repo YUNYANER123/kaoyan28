@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v35';   // v35——清除 27 条 ise/ize 合并重复词、9 条改写正确拼写（9205 词），升版本清旧缓存；index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v36';   // v36——v1.53m：备忘录列表单行预览 / 达标庆祝条恢复 3200ms / 清除单词数据两级确认 / 新增三个倒数日桌面组件（快照新增 cdWidgets）；index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
