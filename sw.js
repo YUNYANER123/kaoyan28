@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v32';   // v32——每次部署升一版，使旧缓存被 activate 阶段自动清除；index.html 与 js/app.js 仍 network-first（手机端刷新即拿新版）。
+const CACHE = 'kaoyan28-v33';   // v33——词汇源换成 jlshdsdk 考研并集（9232 词），升版本清旧缓存；index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
