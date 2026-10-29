@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v36';   // v36——v1.53m：备忘录列表单行预览 / 达标庆祝条恢复 3200ms / 清除单词数据两级确认 / 新增三个倒数日桌面组件（快照新增 cdWidgets）；index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v37';   // v37——v1.53n：生活日历今日加框(大便深绿/经期深粉) / 单词垃圾桶浅红+达标庆祝条渐隐 / 备忘详情文字框加高 / 倒数日列表排序切换+左右方形按钮 / 桌面组件农历标注+叉回倒数日列表 / 开源社区文字调整 / 原生三倒数日组件圆角+标题固定+字体放大；index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

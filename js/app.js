@@ -1520,8 +1520,8 @@
 /* v1.53c：庆祝条 = 覆盖在「进度条(.wslider)+今日已背(.wc-today)」两行上方的浮层（用户截图红框位置）。
    不写死 top:0（之前浮在屏幕最顶端太高）；位置由 celebrateGoalDone() 运行时按 .wslider 实测 rect 设置 top/left/width/minHeight。
    配色同「开源与社区」四按钮：浅蓝→浅粉渐变底 + 深紫字；visibility 控制显隐，便于 flex 垂直居中、不占文档流。 */
-.goal-done-inline{position:fixed;z-index:99999;display:flex;align-items:center;justify-content:center;visibility:hidden;opacity:0;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:16px;border:2px solid rgba(255,170,210,.95);box-shadow:0 8px 24px rgba(180,120,220,.35),0 0 0 3px rgba(255,190,220,.4);text-align:center;white-space:nowrap;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s;pointer-events:none}
-.goal-done-inline.show{visibility:visible;opacity:1;transform:scale(1)}`;
+.goal-done-inline{position:fixed;z-index:99999;display:flex;align-items:center;justify-content:center;visibility:hidden;opacity:0;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:900;font-size:15px;line-height:1.4;padding:10px 18px;border-radius:16px;border:2px solid rgba(255,170,210,.95);box-shadow:0 8px 24px rgba(180,120,220,.35),0 0 0 3px rgba(255,190,220,.4);text-align:center;white-space:nowrap;transform:scale(.8);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s,visibility 0s linear .38s;pointer-events:none}
+.goal-done-inline.show{visibility:visible;opacity:1;transform:scale(1);transition:transform .38s cubic-bezier(.2,1.5,.4,1),opacity .38s,visibility 0s linear 0s}`;
     document.head.appendChild(st);
   }
   let _goalBannerT = null;
@@ -2317,10 +2317,15 @@
 .cd-filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .cd-filter-btn{flex:1 1 0;min-width:0;padding:9px 4px;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:700;font-size:13px;border-radius:11px;cursor:pointer;text-align:center;box-sizing:border-box}
 .cd-filter-btn.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
+/* v1.53n：倒数日「添加」行——变窄的添加按钮 + 左右两个方形按钮（排序切换 / 桌面组件） */
+.cd-add-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.cd-add-row .cd-add-btn{flex:1 1 auto;min-width:0;margin:0}
+.cd-sq-btn{flex:0 0 auto;width:44px;height:44px;box-sizing:border-box;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:800;font-size:15px;border-radius:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.cd-sq-btn.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
 /* v1.53j③：备忘录列表只读卡片 + 详情页 */
 .memo-card .memo-text{font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;padding:4px 2px;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-height:calc(1.6em + 8px)}
 .memo-card .memo-date{font-size:11px;color:#aaa;margin-top:3px}
-.memo-detail-text{width:100%;min-height:220px;padding:12px;font-size:15px;line-height:1.7;border:1px solid rgba(46,144,232,.3);border-radius:12px;resize:vertical;box-sizing:border-box;font-family:inherit;margin:10px 0}
+.memo-detail-text{width:100%;min-height:360px;padding:12px;font-size:15px;line-height:1.7;border:1px solid rgba(46,144,232,.3);border-radius:12px;resize:vertical;box-sizing:border-box;font-family:inherit;margin:10px 0}
 .memo-meta{font-size:13px;color:#888;line-height:1.9;background:rgba(46,144,232,.05);border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .memo-meta b{color:#555}
 /* v1.53j⑤：生日「节气」选择器 */
@@ -2775,7 +2780,7 @@
         const rows = all.length ? all.map((c) => {
           const t = CD_TYPES[c.type] || CD_TYPES.countdown;
           const on = sel.indexOf(c.id) >= 0;
-          const nm = c.type === 'birthday' ? ((c.person || '') + '的生日') : (c.name || '');
+          const nm = c.type === 'birthday' ? ((c.person || '') + '的生日' + (c.cal === 'lunar' ? '（农历）' : c.cal === 'term' ? '（节气）' : '')) : (c.name || '');
           return `<label class="cdw-item ${on ? 'on' : ''}"><input type="checkbox" data-n="${n}" data-id="${c.id}" ${on ? 'checked' : ''}><span>${t.icon} ${esc(nm || '(未命名)')}</span></label>`;
         }).join('') : '<div class="hint">还没有倒数日，先添加一个吧～</div>';
         return `<div class="cdw-box">
@@ -2792,6 +2797,11 @@
         <div class="btn-row"><button class="gbtn" id="cdwDone">完成</button></div>
       </div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
+      // v1.53n：× / 点遮罩 / 手机返回键 → 回倒数日列表（不直接退回计划页）
+      window._modalBackTo = openCdList;
+      const xb = m.querySelector('.modal-x');
+      if (xb) xb.onclick = () => { const f = window._modalBackTo; window._modalBackTo = null; if (f) f(); };
+      m.onclick = (e) => { if (e.target === m) { const f = window._modalBackTo; window._modalBackTo = null; if (f) f(); } };
       m.querySelectorAll('.cdw-item input').forEach((cb) => cb.onchange = () => {
         const k = 'cd' + cb.dataset.n; const id = cb.dataset.id;
         const arr = (store.widgetCd[k] || []).slice();
@@ -2807,20 +2817,24 @@
         store.widgetCd['cd' + b.dataset.auto] = []; save(); render();
       });
       const done = m.querySelector('#cdwDone');
-      if (done) done.onclick = () => { save(); const mk = document.getElementById('modalMask'); if (mk) mk.classList.add('hidden'); };
+      if (done) done.onclick = () => { save(); window._modalBackTo = null; openCdList(); };
     };
     render();
   }
   function openCdList() {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
+    injectPlanMoreStyle();
     // v1.53j①：顶部筛选——默认 cdFilter=null 显示全部；点击某类筛选，再次点击同一类取消回全部
     let cdFilter = null;
+    let cdReverse = false;   // v1.53n：默认正序；点击切换倒序（置顶组不变，其余反转）
     const render = () => {
       // v1.53f：先按置顶（top 的强制最前），置顶组内部与非置顶组一样按剩余天数排序
       const list = (store.countdowns || []).slice().sort((a, b) => {
         const ta = a.top ? 0 : 1, tb = b.top ? 0 : 1;
         if (ta !== tb) return ta - tb;
-        return cdSortVal(a) - cdSortVal(b);
+        const base = cdSortVal(a) - cdSortVal(b);
+        if (ta === 0) return base;               // v1.53n：置顶组始终正序，不受倒序切换影响
+        return cdReverse ? -base : base;         // v1.53n：非置顶组——倒序时整体反转
       });
       const shown = cdFilter ? list.filter((c) => c.type === cdFilter) : list;
       const items = shown.length ? shown.map((c) => {
@@ -2843,16 +2857,23 @@
       }).join('') : '<div class="hint">这个分类下还没有倒数日，点上方「添加」新建一个吧～</div>';
       // v1.53j①：筛选按钮行（默认全选态=不高亮任何一类）+ 「添加」移到筛选行与列表之间（不再沉到列表最底）
       const filterRow = `<div class="cd-filter-row">${['countdown', 'memorial', 'birthday', 'festival'].map((k) => `<button type="button" class="cd-filter-btn ${cdFilter === k ? 'on' : ''}" data-f="${k}">${CD_TYPES[k].icon} ${CD_TYPES[k].label}</button>`).join('')}</div>`;
+      // v1.53n：添加按钮变窄，左右各一个方形按钮——左=正序/倒序切换（默认正序），右=桌面组件配置
+      const addRow = `<div class="cd-add-row">
+        <button type="button" class="cd-sq-btn ${cdReverse ? 'on' : ''}" id="cdSortToggle" title="${cdReverse ? '当前倒序，点击恢复正序' : '当前正序，点击切换倒序'}">${cdReverse ? '倒' : '正'}</button>
+        <button class="gbtn cd-add-btn" id="cdAddNew">＋ 添加倒数日</button>
+        <button type="button" class="cd-sq-btn" id="cdWcfg" title="桌面组件显示设置">🖥️</button>
+      </div>`;
       openModal('📆 倒数日', `
         ${filterRow}
-        <div class="btn-row"><button class="gbtn" id="cdAddNew">＋ 添加倒数日</button></div>
-        <div class="cd-filter-row"><button type="button" class="cd-filter-btn" id="cdWcfg">🖥️ 桌面组件显示设置</button></div>
+        ${addRow}
         <div class="cd-list">${items}</div>`, 'lg');
       const m = document.getElementById('modalMask'); if (!m) return;
       m.querySelectorAll('.cd-card-main').forEach((el) => el.onclick = () => { const c = (store.countdowns || []).find((x) => x.id === el.dataset.id); if (c) openCdDetail(c); });
       m.querySelectorAll('.cd-more').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openCdItemMenu(b.dataset.id, b); });
       m.querySelector('#cdAddNew').onclick = () => openCdAdd();
       m.querySelector('#cdWcfg').onclick = () => openCdWidgetCfg();
+      const stg = m.querySelector('#cdSortToggle');
+      if (stg) stg.onclick = () => { cdReverse = !cdReverse; render(); };
       // v1.53j①：筛选切换
       m.querySelectorAll('.cd-filter-btn[data-f]').forEach((b) => b.onclick = () => { const f = b.dataset.f; cdFilter = (cdFilter === f) ? null : f; render(); });
     };
@@ -4072,7 +4093,7 @@
     st.textContent = `
 .wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
 .wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
-.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.07);border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#5b7c99;padding:0}
+.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(220,70,100,.28);background:#ffe1e7;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
 .wc-trash:active{transform:scale(.93)}
 .wc-clear-tip{font-size:12.5px;color:#777;margin-bottom:12px;line-height:1.6}
 .wc-clear-btn{display:block;width:100%;text-align:left;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.06);border-radius:14px;padding:11px 12px;margin-bottom:10px;cursor:pointer}
@@ -5901,6 +5922,16 @@
     head.querySelector('[data-yp="-1"]').onclick = () => { y--; head.querySelector('.yp-y').textContent = y; render(); };
     head.querySelector('[data-yp="1"]').onclick = () => { y++; head.querySelector('.yp-y').textContent = y; render(); };
   }
+  let _calTodayInjected = false;
+  function injectCalTodayStyle() {
+    if (_calTodayInjected) return; _calTodayInjected = true;
+    const st = document.createElement('style');
+    st.textContent = `
+/* v1.53n：生活页日历「今天」加框——大便深绿 / 经期深粉，一眼看到今天 */
+.cal-cell.today-bowel{outline:2px solid #2f8f5b;outline-offset:-2px}
+.cal-cell.today-period{outline:2px solid #c2185b;outline-offset:-2px}`;
+    document.head.appendChild(st);
+  }
   function renderLife() {
     const t = todayStr();
     const vd = lifeViewDate;
@@ -5915,6 +5946,7 @@
 
     const L = lifeDay(vd);
     injectUiStyle();
+    injectCalTodayStyle();
     const wt = $('#wakeTime'), st = $('#sleepTime');
     // 保留原生 <input type="time"> 时钟交互；原生「清除」在部分安卓 WebView 上无效，故补显式「清除」按钮 → 置 00:00
     wt.value = L.wake || ''; st.value = L.sleep || '';
@@ -5963,7 +5995,7 @@
     // 大便日历（任意日期可标记：点空白=记录，点已记录=删除）
     {
       const ym = bowelCalYM, y = Math.floor(ym / 12), m = ym % 12;
-      const mark = (ds) => { const x = store.life[ds]; return (x && x.bowel) ? 'bowel-on' : ''; };
+      const mark = (ds) => { const x = store.life[ds]; let cls = (x && x.bowel) ? 'bowel-on' : ''; if (ds === t) cls += (cls ? ' ' : '') + 'today-bowel'; return cls; };
       const host = $('#bowelRow');
       host.innerHTML = calShellHTML(y, m, mark, 'bowel');
       host.querySelectorAll('.cal-cell[data-ds]').forEach((c) => c.onclick = () => {
@@ -6014,7 +6046,7 @@
     // 经期日期列表已按需求移除（日期只在日历上用粉色标注体现，避免与日历重复）
     // 经期日历（粉色标注 + 左右滑动看其他月 + 点格子编辑）
     const ym = periodCalYM, y = Math.floor(ym / 12), m = ym % 12;
-    const mark = (ds) => isPeriodDay(ds) ? 'pink' : '';
+    const mark = (ds) => { let cls = isPeriodDay(ds) ? 'pink' : ''; if (ds === t) cls += (cls ? ' ' : '') + 'today-period'; return cls; };
     const host = $('#periodCal');
     host.innerHTML = calShellHTML(y, m, mark, 'period');
     wireCal(host, 'period', () => renderLife());
@@ -6348,7 +6380,8 @@
     st.textContent = `
 .ext-link{display:flex;align-items:center;gap:8px;margin:8px 0;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 12px rgba(150,170,230,.25)}
 .ext-link:active{transform:scale(.98)}
-.ext-link .el-ic{font-size:17px}`;
+.ext-link .el-ic{font-size:17px}
+.el-author-sub{font-size:12.5px;font-weight:800;color:#3a2f63;opacity:.8;margin:-2px 0 9px 30px}`;
     document.head.appendChild(st);
   }
   function buildLinksCard() {
@@ -6359,8 +6392,9 @@
       <div class="card-t">🌐 开源与社区</div>
       <p class="hint">喵上岸是完全开源的考研备考工作台，欢迎 Star、提 Issue、一起共建 🐱</p>
       <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>作者 GitHub 主页</a>
+      <div class="el-author-sub">YUNYANER123</div>
       <a class="ext-link" href="https://github.com/YUNYANER123/miaoshangan-android01" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
-      <a class="ext-link" href="https://yunyaner123.github.io/kaoyan28/" target="_blank" rel="noopener"><span class="el-ic">🌟</span>喵上岸 GitHub 链接</a>
+      <a class="ext-link" href="https://yunyaner123.github.io/kaoyan28/" target="_blank" rel="noopener"><span class="el-ic">🌟</span>喵上岸 GitHub 在线版</a>
       <a class="ext-link" href="https://miaoshangan.app.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
     return card;
   }
