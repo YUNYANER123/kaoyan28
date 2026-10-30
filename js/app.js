@@ -2173,9 +2173,9 @@
       const unfinBtn = document.getElementById('planUnfin');
       if (unfinBtn && unfinBtn.parentElement !== toolsRow) toolsRow.appendChild(unfinBtn);
       const toolDefs = [
-        ['planSearch', '🔍', '搜索计划', openPlanSearch],
         ['planMemos', '📝', '备忘录', () => openMemo()],
         ['planCd', '📆', '倒数日', () => openCountdown()],
+        ['planSearch', '🔍', '搜索计划', openPlanSearch],
         ['planStats', '📊', '计划统计', () => goPage('stats')],
         ['planPrint', '🖨️', '导出当日计划图片', exportPlanJpg],
       ];
@@ -2186,8 +2186,8 @@
         b.onclick = fn;
         toolsRow.appendChild(b);
       });
-      // 幂等重排：六按钮始终为 🔍 📝 📆 ⚠️ 📊 🖨️ 顺序（⚠️ 是 index.html 已有节点，位置可能漂移）
-      ['planSearch', 'planMemos', 'planCd', 'planUnfin', 'planStats', 'planPrint'].forEach((id) => {
+      // 幂等重排：六按钮始终为 📝 📆 🔍 ⚠️ 📊 🖨️ 顺序（v1.53p：🔍 右移到 📝📆 之后）
+      ['planMemos', 'planCd', 'planSearch', 'planUnfin', 'planStats', 'planPrint'].forEach((id) => {
         const el = document.getElementById(id);
         if (el && el.parentElement === toolsRow) toolsRow.appendChild(el);
       });
@@ -2220,8 +2220,12 @@
     st.textContent = `
 /* v1.53o：计划页工具行——六按钮并列一行，位于「全部/未完成/已完成」筛选行上方，统一蓝色渐变 */
 .plan-tools{display:flex;gap:8px;margin:12px 0 0}
-.plan-tools button{flex:1 1 0;width:auto;min-width:0;height:38px;padding:0;border:none;border-radius:12px;font-size:16px;line-height:1;font-weight:900;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3D9EF0,#68C8F7);box-shadow:0 3px 9px rgba(61,158,240,.28)}
+.plan-tools button{flex:1 1 0;width:0;min-width:0;height:40px;margin:0;padding:0;border:none;border-radius:12px;font-size:18px;line-height:1;font-weight:900;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3D9EF0,#68C8F7);box-shadow:0 3px 9px rgba(61,158,240,.28);box-sizing:border-box}
 .plan-tools button:active{transform:scale(.95)}
+/* v1.53p：导出图片预览（长按保存 / 下载兜底） */
+.plan-img-wrap{max-height:60vh;overflow:auto;border-radius:14px;background:rgba(46,144,232,.06);padding:8px}
+.plan-img{width:100%;height:auto;display:block;border-radius:10px}
+.plan-img-dl{display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:6px}
 /* 🔍 移入工具行后，头部卡右侧只剩进度圈——上下居中（覆盖 styles.css 的 column 默认顶部对齐） */
 .ph-right{justify-content:center}`;
     document.head.appendChild(st);
@@ -3151,13 +3155,33 @@
       // 水印：右下角 🐱 喵上岸
       c.font = '48px ' + FONT; c.fillText('🐱', W - 250, H - 46);
       c.fillStyle = '#33475e'; c.font = '900 46px ' + FONT; c.fillText('喵上岸', W - 188, H - 44);
-      // 导出 JPG
-      const a = document.createElement('a');
-      a.download = '喵上岸计划_' + ds + '.jpg';
-      a.href = cv.toDataURL('image/jpeg', 0.92);
-      document.body.appendChild(a); a.click(); a.remove();
-      toast('已导出当日计划图片 🖼️');
+      // v1.53p：导出 JPG —— 优先调原生桥存进系统相册（Android 10+ 走 MediaStore，无需权限）；
+      // 网页版 / 桥不可用时弹预览：长按图片保存到相册 + 下载按钮兜底。
+      // 关键修复：旧实现只 a.download(dataURL) 在 Android WebView 里会被静默忽略（download 属性不处理 data: URL），
+      // toast 却无条件显示「已导出」→ 用户以为成功但相册里没有图。
+      const dataUrl = cv.toDataURL('image/jpeg', 0.92);
+      const fname = '喵上岸计划_' + ds + '.jpg';
+      const br = getBridge();
+      const pSave = (br && typeof br.saveImage === 'function')
+        ? br.saveImage({ base64: dataUrl.split(',')[1], filename: fname })
+        : null;
+      if (pSave && typeof pSave.then === 'function') {
+        pSave.then((r) => {
+          if (r && r.ok) { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); }
+          else showPlanImgPreview(dataUrl, fname, false);
+        }).catch(() => showPlanImgPreview(dataUrl, fname, false));
+      } else {
+        showPlanImgPreview(dataUrl, fname, false);
+      }
     } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
+  }
+  // v1.53p：计划图片预览（原生保存不可用时的兜底：长按保存到相册 / 点按钮下载）
+  function showPlanImgPreview(dataUrl, fname, saved) {
+    openModal('🖨️ 计划图片', `
+      <div class="plan-img-wrap"><img class="plan-img" src="${dataUrl}" alt="当日计划图片"></div>
+      <div class="hint" style="margin:10px 0 8px">${saved ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）' : '长按图片可保存到相册；电脑上可点下方按钮下载'}</div>
+      <a class="gbtn plan-img-dl" download="${fname}" href="${dataUrl}">⬇ 下载图片</a>
+    `, 'lg');
   }
   // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
   function openPlanSearch() {
@@ -4212,7 +4236,7 @@
     st.textContent = `
 .wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
 .wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
-.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(220,70,100,.28);background:#ffd2dc;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
+.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1.5px solid #e0486a;background:#ffd2dc;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
 .wc-trash:active{transform:scale(.93)}
 .wc-clear-tip{font-size:12.5px;color:#777;margin-bottom:12px;line-height:1.6}
 .wc-clear-btn{display:block;width:100%;text-align:left;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.06);border-radius:14px;padding:11px 12px;margin-bottom:10px;cursor:pointer}

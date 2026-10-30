@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v38';   // v38——v1.53o：计划页🖨️导出当日计划JPG(Canvas手绘效果图样式)+🔍📝📆⚠️📊🖨️六按钮蓝色工具行(筛选行上方,⋮菜单移除)+进度圈头部卡内居中 / 生活日历今日框调浅变细 / 单词垃圾桶加深 / 倒数日排序按钮⇧⇩箭头 / 开源社区YUNYANER123移入作者链接框内；index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v39';   // v39——v1.53p：计划图片导出真正存相册（原生 KaoyanBridge.saveImage + MediaStore，网页端预览长按保存兜底；修 a.download dataURL 在 WebView 静默失败却提示已导出的假成功）/ 单词垃圾桶红色边框 #e0486a / 工具行六按钮严格等宽等高 / 🔍 右移到 📝📆 之后；index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
