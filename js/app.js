@@ -2158,45 +2158,43 @@
     $('#addTask').onclick = addTask;
     $('#addPlanTimer').onclick = () => openPlanModal({ text: $('#taskInput').value.trim(), date: planDate });
     $('#planUnfin').onclick = openUnfinPage;
-    // v1.33e 布局重构：⚠ 移出 .ph-right，放到筛选按钮行（全部/未完成/已完成）右侧；🔍 放回进度圈上方。
-    // 这样 .ph-right 恢复「🔍 + 进度圈」原始宽度（约 58px），不再挤窄左侧日期框，▶ 不再溢出换行。
-    // 不改动 index.html：⚠ 复用已存在的 #planUnfin 节点搬移（保留其 onclick）；🔍 用 JS 注入。
+    // v1.53o：计划页工具行——🔍📝📆⚠️📊🖨️ 六按钮并列一行，位于「全部/未完成/已完成」筛选行上方，
+    // 统一蓝色渐变背景；📝📆 从原 ⋮ 菜单拆出为独立按钮（⋮ 菜单随之移除）；🔍 移出头部卡后，
+    // .ph-right 由 injectPlanToolsStyle 的 justify-content:center 让进度圈在头部卡内上下居中。
+    // 不改动 index.html：⚠ 复用已有 #planUnfin 节点搬移（保留其 onclick），其余按钮 JS 注入，全部幂等。
     const pfRow = document.getElementById('planFilter');
-    const unfinBtn = document.getElementById('planUnfin');
-    if (pfRow && unfinBtn && unfinBtn.parentElement !== pfRow) {
-      pfRow.appendChild(unfinBtn); // 同一 DOM 节点重复 appendChild 不会重复，天然幂等
+    let toolsRow = document.getElementById('planTools');
+    if (pfRow && !toolsRow) {
+      toolsRow = document.createElement('div');
+      toolsRow.id = 'planTools'; toolsRow.className = 'plan-tools';
+      pfRow.parentElement.insertBefore(toolsRow, pfRow);
     }
-    // 需求7：在 ⚠️ 右侧加 📊 统计入口按钮（紧邻 ⚠️，用固定小间距，不漂移）
-    if (pfRow && !document.getElementById('planStats')) {
-      const sb2 = document.createElement('button');
-      sb2.id = 'planStats'; sb2.className = 'plan-statbtn'; sb2.textContent = '📊';
-      sb2.title = '计划统计';
-      if (unfinBtn && unfinBtn.parentElement === pfRow) pfRow.insertBefore(sb2, unfinBtn.nextSibling);
-      else pfRow.appendChild(sb2);
-      sb2.onclick = () => goPage('stats');
+    if (toolsRow) {
+      const unfinBtn = document.getElementById('planUnfin');
+      if (unfinBtn && unfinBtn.parentElement !== toolsRow) toolsRow.appendChild(unfinBtn);
+      const toolDefs = [
+        ['planSearch', '🔍', '搜索计划', openPlanSearch],
+        ['planMemos', '📝', '备忘录', () => openMemo()],
+        ['planCd', '📆', '倒数日', () => openCountdown()],
+        ['planStats', '📊', '计划统计', () => goPage('stats')],
+        ['planPrint', '🖨️', '导出当日计划图片', exportPlanJpg],
+      ];
+      toolDefs.forEach(([id, txt, title, fn]) => {
+        if (document.getElementById(id)) return;
+        const b = document.createElement('button');
+        b.id = id; b.type = 'button'; b.textContent = txt; b.title = title;
+        b.onclick = fn;
+        toolsRow.appendChild(b);
+      });
+      // 幂等重排：六按钮始终为 🔍 📝 📆 ⚠️ 📊 🖨️ 顺序（⚠️ 是 index.html 已有节点，位置可能漂移）
+      ['planSearch', 'planMemos', 'planCd', 'planUnfin', 'planStats', 'planPrint'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && el.parentElement === toolsRow) toolsRow.appendChild(el);
+      });
     }
-    // v1.51：⋮ 更多菜单（📝备忘录 / 📆倒数日）移到添加行（⚙设置 / 添加 / ＋）右侧
-    if (!document.getElementById('planMore')) {
-      const more = document.createElement('button');
-      more.id = 'planMore'; more.textContent = '⋮';
-      more.title = '更多（备忘录 / 倒数日）';
-      const addRow = document.querySelector('.add-box .add-row');
-      if (addRow) addRow.appendChild(more); else if (pfRow) pfRow.appendChild(more);
-      more.onclick = (e) => { e.stopPropagation(); togglePlanMore(); };
-    }
-    // v1.53b：必须在进入计划页时就注入 #planMore 样式（⋮ 黄色/36×36/固定形状），
-    // 否则首屏未开过备忘录/倒数日弹窗时按钮会回退到 .add-row button 的蓝色扁框，
-    // 直到点开一次对话框才注入变黄。injectPlanMoreStyle 内部有 _done 守卫，重复调用安全。
+    // v1.53b：必须在进入计划页时就注入备忘录/倒数日弹窗相关样式（injectPlanMoreStyle 内部 _done 守卫，重复调用安全）
     injectPlanMoreStyle();
-    const phRight = document.querySelector('.ph-right');
-    const phRing = document.querySelector('.ph-ring');
-    if (phRight && phRing && !document.getElementById('planSearch')) {
-      const sb = document.createElement('button');
-      sb.id = 'planSearch'; sb.className = 'ph-warn'; sb.textContent = '🔍';
-      sb.title = '搜索计划';
-      phRight.insertBefore(sb, phRing); // 放在进度圈之前 = 上方
-      sb.onclick = openPlanSearch;
-    }
+    injectPlanToolsStyle();
     $('#addCat').onclick = () => {
       const name = prompt('新建分类名称（例如：复试、科研、运动）');
       if (!name) return;
@@ -2215,6 +2213,19 @@
       : '';
   }
 
+  /* ============ v1.53o：计划页工具行样式（🔍📝📆⚠️📊🖨️ 六按钮蓝色一行） ============ */
+  function injectPlanToolsStyle() {
+    if (injectPlanToolsStyle._done) return; injectPlanToolsStyle._done = true;
+    const st = document.createElement('style');
+    st.textContent = `
+/* v1.53o：计划页工具行——六按钮并列一行，位于「全部/未完成/已完成」筛选行上方，统一蓝色渐变 */
+.plan-tools{display:flex;gap:8px;margin:12px 0 0}
+.plan-tools button{flex:1 1 0;width:auto;min-width:0;height:38px;padding:0;border:none;border-radius:12px;font-size:16px;line-height:1;font-weight:900;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3D9EF0,#68C8F7);box-shadow:0 3px 9px rgba(61,158,240,.28)}
+.plan-tools button:active{transform:scale(.95)}
+/* 🔍 移入工具行后，头部卡右侧只剩进度圈——上下居中（覆盖 styles.css 的 column 默认顶部对齐） */
+.ph-right{justify-content:center}`;
+    document.head.appendChild(st);
+  }
   /* ============ v1.48：计划页 ⋮ 更多菜单（📝备忘录 / 📆倒数日） ============ */
   let planMoreMenu = null;
   function injectPlanMoreStyle() {
@@ -2320,7 +2331,7 @@
 /* v1.53n：倒数日「添加」行——变窄的添加按钮 + 左右两个方形按钮（排序切换 / 桌面组件） */
 .cd-add-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .cd-add-row .cd-add-btn{flex:1 1 auto;min-width:0;margin:0}
-.cd-sq-btn{flex:0 0 auto;width:44px;height:44px;box-sizing:border-box;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:800;font-size:15px;border-radius:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.cd-sq-btn{flex:0 0 auto;width:44px;height:44px;box-sizing:border-box;border:1px solid rgba(46,144,232,.3);background:#fff;color:#2F80ED;font-weight:800;font-size:18px;border-radius:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
 .cd-sq-btn.on{background:linear-gradient(135deg,#3D9EF0,#68C8F7);color:#fff;border-color:transparent}
 /* v1.53j③：备忘录列表只读卡片 + 详情页 */
 .memo-card .memo-text{font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;padding:4px 2px;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-height:calc(1.6em + 8px)}
@@ -2859,7 +2870,7 @@
       const filterRow = `<div class="cd-filter-row">${['countdown', 'memorial', 'birthday', 'festival'].map((k) => `<button type="button" class="cd-filter-btn ${cdFilter === k ? 'on' : ''}" data-f="${k}">${CD_TYPES[k].icon} ${CD_TYPES[k].label}</button>`).join('')}</div>`;
       // v1.53n：添加按钮变窄，左右各一个方形按钮——左=正序/倒序切换（默认正序），右=桌面组件配置
       const addRow = `<div class="cd-add-row">
-        <button type="button" class="cd-sq-btn ${cdReverse ? 'on' : ''}" id="cdSortToggle" title="${cdReverse ? '当前倒序，点击恢复正序' : '当前正序，点击切换倒序'}">${cdReverse ? '倒' : '正'}</button>
+        <button type="button" class="cd-sq-btn ${cdReverse ? 'on' : ''}" id="cdSortToggle" title="${cdReverse ? '当前倒序（时间远的在前），点击恢复正序' : '当前正序（时间近的在前），点击切换倒序'}">${cdReverse ? '⇩' : '⇧'}</button>
         <button class="gbtn cd-add-btn" id="cdAddNew">＋ 添加倒数日</button>
         <button type="button" class="cd-sq-btn" id="cdWcfg" title="桌面组件显示设置">🖥️</button>
       </div>`;
@@ -3039,6 +3050,114 @@
         goPage('plan');
       };
     });
+  }
+  /* ============ v1.53o：🖨️ 导出当日计划为 JPG 图片（Canvas 手绘，样式对齐效果图） ============ */
+  function planExportTimeStr(x) {
+    let timeStr = '';
+    const cross = !!(x.tplId && x.dateStart && x.dateEnd && x.dateStart !== x.dateEnd);
+    if (x.tplId) {
+      if (cross) {
+        const fs = x.dateStart.slice(5).replace('-', '/');
+        const fe = x.dateEnd.slice(5).replace('-', '/');
+        if (x.timeMode === 'period' && x.time && x.timeEnd) timeStr = fs + ' ' + x.time + ' - ' + fe + ' ' + x.timeEnd;
+        else if (x.timeMode === 'point' && x.time) timeStr = fs + ' ' + x.time + ' - ' + fe + ' ' + x.time;
+        else timeStr = fs + ' - ' + fe;
+      } else if (x.timeMode === 'point' && x.time) {
+        timeStr = (x.date === todayStr() ? '今天' : x.date.slice(5).replace('-', '/')) + ' ' + x.time;
+      } else if (x.timeMode === 'period' && x.time && x.timeEnd) {
+        timeStr = (x.date === todayStr() ? '今天' : x.date.slice(5).replace('-', '/')) + ' ' + x.time + '-' + x.timeEnd;
+      }
+    }
+    if (!timeStr) timeStr = x.date === todayStr() ? '今天' : x.date.slice(5).replace('-', '/');
+    return timeStr;
+  }
+  function exportPlanJpg() {
+    try {
+      const ds = planDate || todayStr();
+      const list = effTasks(ds);
+      const doneN = list.filter((x) => x.done).length;
+      const pct = list.length ? Math.round(doneN / list.length * 100) : 0;
+      const W = 720, cardH = 158, cardGap = 18, headH = 290, topPad = 28;
+      const listTop = topPad + headH + 28;
+      const H = listTop + list.length * (cardH + cardGap) + (list.length ? 0 : 90) + 150;
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const c = cv.getContext('2d');
+      const FONT = '"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
+      const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+      // 背景：浅蓝渐变
+      const bg = c.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#cfe4f8'); bg.addColorStop(1, '#ddeffb');
+      c.fillStyle = bg; c.fillRect(0, 0, W, H);
+      // 头部日期卡
+      rr(28, topPad, W - 56, headH, 36); c.fillStyle = '#ffffff'; c.fill();
+      const d0 = new Date(ds + 'T00:00:00');
+      const md = (d0.getMonth() + 1) + '/' + d0.getDate();
+      c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      c.fillStyle = '#253247'; c.font = '900 54px ' + FONT;
+      c.fillText(md + ' · 周' + '日一二三四五六'[d0.getDay()], 70, topPad + 88);
+      const full = ds.replace(/-/g, '/');
+      c.font = '800 34px ' + FONT;
+      const bw = c.measureText(full).width + 52;
+      rr(70, topPad + 122, bw, 62, 22); c.fillStyle = '#ddeefc'; c.fill();
+      c.fillStyle = '#2f80ed'; c.fillText(full, 96, topPad + 165);
+      c.fillStyle = list.length ? '#8a97a8' : '#a9b5c4';
+      c.fillText(list.length ? '已完成 ' + doneN + '/' + list.length : '这一天还没有计划', 70, topPad + 248);
+      // 圆环进度
+      const cx = W - 165, cy = topPad + headH / 2, R = 86;
+      c.lineWidth = 22; c.lineCap = 'round';
+      c.strokeStyle = '#dfe9f5'; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
+      if (pct > 0) { c.strokeStyle = '#3D9EF0'; c.beginPath(); c.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); c.stroke(); }
+      c.fillStyle = '#2f80ed'; c.font = '900 40px ' + FONT; c.textAlign = 'center';
+      c.fillText(pct + '%', cx, cy + 14);
+      c.textAlign = 'left';
+      // 任务卡列表
+      const priColor = (p) => p === 'high' ? '#e85d5d' : p === 'low' ? '#5fa8e8' : '#f5a623';
+      list.forEach((x, i) => {
+        const y = listTop + i * (cardH + cardGap);
+        const done = !!x.done;
+        rr(28, y, W - 56, cardH, 30); c.fillStyle = done ? '#e3eefb' : '#fdf3d9'; c.fill();
+        c.save(); rr(28, y, W - 56, cardH, 30); c.clip();
+        c.fillStyle = done ? '#7fc4ee' : priColor(x.pri);
+        c.fillRect(28, y, 12, cardH);
+        c.restore();
+        const bx = 74, by = y + (cardH - 56) / 2;
+        rr(bx, by, 56, 56, 16);
+        if (done) {
+          c.fillStyle = '#3dbe7b'; c.fill();
+          c.strokeStyle = '#fff'; c.lineWidth = 7; c.lineCap = 'round';
+          c.beginPath(); c.moveTo(bx + 14, by + 29); c.lineTo(bx + 25, by + 40); c.lineTo(bx + 43, by + 17); c.stroke();
+        } else { c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#cfd9e6'; c.lineWidth = 4; c.stroke(); }
+        c.fillStyle = done ? '#9aa7b5' : '#253247';
+        c.font = '800 40px ' + FONT;
+        c.fillText(String(x.disp || x.text || ''), 158, y + 66, W - 158 - 190);
+        const ts = planExportTimeStr(x);
+        c.font = '700 30px ' + FONT;
+        const tw = c.measureText(ts).width + 40;
+        rr(158, y + 88, tw, 48, 16); c.fillStyle = '#fbe7c8'; c.fill();
+        c.fillStyle = '#e8930c'; c.fillText(ts, 178, y + 122);
+        const ab = (ax, glyph) => {
+          rr(ax, y + (cardH - 64) / 2, 64, 64, 18); c.fillStyle = done ? '#f3f8fd' : '#f7efdc'; c.fill();
+          c.fillStyle = '#6b7a8c'; c.font = '700 34px ' + FONT; c.textAlign = 'center';
+          c.fillText(glyph, ax + 32, y + (cardH - 64) / 2 + 45); c.textAlign = 'left';
+        };
+        ab(W - 28 - 30 - 64 - 16, '✎');
+        ab(W - 28 - 30, '✕');
+      });
+      if (!list.length) {
+        c.fillStyle = '#9fb0c4'; c.font = '700 34px ' + FONT; c.textAlign = 'center';
+        c.fillText('这一天还没有计划', W / 2, listTop + 60); c.textAlign = 'left';
+      }
+      // 水印：右下角 🐱 喵上岸
+      c.font = '48px ' + FONT; c.fillText('🐱', W - 250, H - 46);
+      c.fillStyle = '#33475e'; c.font = '900 46px ' + FONT; c.fillText('喵上岸', W - 188, H - 44);
+      // 导出 JPG
+      const a = document.createElement('a');
+      a.download = '喵上岸计划_' + ds + '.jpg';
+      a.href = cv.toDataURL('image/jpeg', 0.92);
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('已导出当日计划图片 🖼️');
+    } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
   }
   // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
   function openPlanSearch() {
@@ -4093,7 +4212,7 @@
     st.textContent = `
 .wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
 .wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
-.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(220,70,100,.28);background:#ffe1e7;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
+.wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1px solid rgba(220,70,100,.28);background:#ffd2dc;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
 .wc-trash:active{transform:scale(.93)}
 .wc-clear-tip{font-size:12.5px;color:#777;margin-bottom:12px;line-height:1.6}
 .wc-clear-btn{display:block;width:100%;text-align:left;border:1px solid rgba(46,144,232,.18);background:rgba(46,144,232,.06);border-radius:14px;padding:11px 12px;margin-bottom:10px;cursor:pointer}
@@ -5928,8 +6047,8 @@
     const st = document.createElement('style');
     st.textContent = `
 /* v1.53n：生活页日历「今天」加框——大便深绿 / 经期深粉，一眼看到今天 */
-.cal-cell.today-bowel{outline:2px solid #2f8f5b;outline-offset:-2px}
-.cal-cell.today-period{outline:2px solid #c2185b;outline-offset:-2px}`;
+.cal-cell.today-bowel{outline:1.5px solid #8fd4b0;outline-offset:-2px}
+.cal-cell.today-period{outline:1.5px solid #f2aec7;outline-offset:-2px}`;
     document.head.appendChild(st);
   }
   function renderLife() {
@@ -6381,7 +6500,7 @@
 .ext-link{display:flex;align-items:center;gap:8px;margin:8px 0;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,#9AD0FF,#FFC2E6);color:#3a2f63;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 12px rgba(150,170,230,.25)}
 .ext-link:active{transform:scale(.98)}
 .ext-link .el-ic{font-size:17px}
-.el-author-sub{font-size:12.5px;font-weight:800;color:#3a2f63;opacity:.8;margin:-2px 0 9px 30px}`;
+.el-author-sub{font-size:11px;font-weight:700;color:#3a2f63;opacity:.72;margin:2px 0 0;line-height:1.25;text-align:left}`;
     document.head.appendChild(st);
   }
   function buildLinksCard() {
@@ -6391,8 +6510,7 @@
     card.innerHTML = `
       <div class="card-t">🌐 开源与社区</div>
       <p class="hint">喵上岸是完全开源的考研备考工作台，欢迎 Star、提 Issue、一起共建 🐱</p>
-      <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span>作者 GitHub 主页</a>
-      <div class="el-author-sub">YUNYANER123</div>
+      <a class="ext-link" href="https://github.com/YUNYANER123" target="_blank" rel="noopener"><span class="el-ic">👤</span><span class="el-txt">作者 GitHub 主页<div class="el-author-sub">YUNYANER123</div></span></a>
       <a class="ext-link" href="https://github.com/YUNYANER123/miaoshangan-android01" target="_blank" rel="noopener"><span class="el-ic">🐱</span>喵上岸 GitHub 仓库</a>
       <a class="ext-link" href="https://yunyaner123.github.io/kaoyan28/" target="_blank" rel="noopener"><span class="el-ic">🌟</span>喵上岸 GitHub 在线版</a>
       <a class="ext-link" href="https://miaoshangan.app.workbuddy.host" target="_blank" rel="noopener"><span class="el-ic">🚀</span>喵上岸在线版（workbuddy.host）</a>`;
