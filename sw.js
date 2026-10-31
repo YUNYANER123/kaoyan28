@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v39';   // v39——v1.53p：计划图片导出真正存相册（原生 KaoyanBridge.saveImage + MediaStore，网页端预览长按保存兜底；修 a.download dataURL 在 WebView 静默失败却提示已导出的假成功）/ 单词垃圾桶红色边框 #e0486a / 工具行六按钮严格等宽等高 / 🔍 右移到 📝📆 之后；index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v40';   // v40——v1.53q：计划图片导出重做（卡片按优先级 p0~p3 上色、已完成不再刷蓝、计划名自动换行、时间字号缩小、隐藏编辑/删除按钮、背景上浅下深渐变、右下角透明小白猫+蓝色喵上岸水印）/ 工具行六按钮缩小且 ⚠️(#planUnfin) 夺回等宽等高；index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

@@ -2219,9 +2219,11 @@
     const st = document.createElement('style');
     st.textContent = `
 /* v1.53o：计划页工具行——六按钮并列一行，位于「全部/未完成/已完成」筛选行上方，统一蓝色渐变 */
-.plan-tools{display:flex;gap:8px;margin:12px 0 0}
-.plan-tools button{flex:1 1 0;width:0;min-width:0;height:40px;margin:0;padding:0;border:none;border-radius:12px;font-size:18px;line-height:1;font-weight:900;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3D9EF0,#68C8F7);box-shadow:0 3px 9px rgba(61,158,240,.28);box-sizing:border-box}
+.plan-tools{display:flex;gap:6px;margin:12px 0 0}
+.plan-tools button{flex:1 1 0;width:0;min-width:0;height:34px;margin:0;padding:0;border:none;border-radius:10px;font-size:15px;line-height:1;font-weight:900;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3D9EF0,#68C8F7);box-shadow:0 2px 7px rgba(61,158,240,.26);box-sizing:border-box}
 .plan-tools button:active{transform:scale(.95)}
+/* v1.53q：⚠️(#planUnfin) / 📊(#planStats) 原为 head 内独立节点，移入工具行后须显式夺回等宽等高，覆盖 injectUiStyle 里的 #planUnfin{flex:0 0 auto}，否则 ⚠️ 被挤成内容宽度、像没背景框 */
+.plan-tools #planUnfin,.plan-tools #planStats{margin-left:0;flex:1 1 0;width:0}
 /* v1.53p：导出图片预览（长按保存 / 下载兜底） */
 .plan-img-wrap{max-height:60vh;overflow:auto;border-radius:14px;background:rgba(46,144,232,.06);padding:8px}
 .plan-img{width:100%;height:auto;display:block;border-radius:10px}
@@ -3081,98 +3083,130 @@
       const list = effTasks(ds);
       const doneN = list.filter((x) => x.done).length;
       const pct = list.length ? Math.round(doneN / list.length * 100) : 0;
-      const W = 720, cardH = 158, cardGap = 18, headH = 290, topPad = 28;
-      const listTop = topPad + headH + 28;
-      const H = listTop + list.length * (cardH + cardGap) + (list.length ? 0 : 90) + 150;
-      const cv = document.createElement('canvas');
-      cv.width = W; cv.height = H;
-      const c = cv.getContext('2d');
       const FONT = '"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
+      const W = 720, topPad = 28, headH = 270, headGap = 22;
+      const cardX = 28, cardW = W - 56, cardRight = cardX + cardW;
+      const bx = cardX + 24, bs = 54;
+      const nameX = bx + bs + 12, nameMaxW = cardRight - 18 - nameX;
+      const nameFont = 33, nameLineH = 44, timeFont = 22, timeH = 36, timePadX = 14;
+      // 优先级配色（对齐线上 styles.css .task.p0~p3）：p1=浅黄 / p2=浅绿 / p3=浅蓝 / p0=浅红。
+      // 关键：完成态只让文字变灰加删除线，背景保持优先级色（不再把已完成刷成蓝色）。
+      const PRI = {
+        p0: { bg: '#ffe0e6', stripe: '#E5476A' },
+        p1: { bg: '#fff2cc', stripe: '#D9821A' },
+        p2: { bg: '#d9f6e1', stripe: '#2E90E8' },
+        p3: { bg: '#dcecff', stripe: '#9AA9B8' }
+      };
+      const cv = document.createElement('canvas');
+      const c = cv.getContext('2d');
       const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
-      // 背景：浅蓝渐变
+      const wrapText = (text, maxW) => {
+        const lines = []; let line = '';
+        text = String(text == null ? '' : text);
+        for (const ch of text) {
+          const t = line + ch;
+          if (c.measureText(t).width > maxW && line) { lines.push(line); line = ch; }
+          else line = t;
+        }
+        if (line) lines.push(line);
+        return lines;
+      };
+      // 预排版：每张卡片高度随计划名行数变化（名称过长自动换行，不再压缩成一行）
+      const items = list.map((x) => {
+        c.font = '800 ' + nameFont + 'px ' + FONT;
+        let lines = wrapText(x.disp || x.text || '', nameMaxW);
+        if (lines.length > 3) { lines = lines.slice(0, 3); lines[2] = lines[2].slice(0, -1) + '…'; }
+        const ts = planExportTimeStr(x);
+        c.font = '700 ' + timeFont + 'px ' + FONT;
+        const tw = c.measureText(ts).width + timePadX * 2;
+        const h = 22 + lines.length * nameLineH + 12 + timeH + 18;
+        return { x, lines, ts, tw, h };
+      });
+      const listTop0 = topPad + headH + headGap;
+      const H = listTop0 + items.reduce((s, it) => s + it.h + 16, 0) + (list.length ? 120 : 80);
+      cv.width = W; cv.height = H;
+      // ===== 绘制 =====
+      // 背景：浅蓝渐变，上浅下深一点点（对齐图1效果）
       const bg = c.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, '#cfe4f8'); bg.addColorStop(1, '#ddeffb');
+      bg.addColorStop(0, '#c6e0f5'); bg.addColorStop(1, '#a6c9ea');
       c.fillStyle = bg; c.fillRect(0, 0, W, H);
       // 头部日期卡
-      rr(28, topPad, W - 56, headH, 36); c.fillStyle = '#ffffff'; c.fill();
+      rr(cardX, topPad, cardW, headH, 34); c.fillStyle = '#ffffff'; c.fill();
       const d0 = new Date(ds + 'T00:00:00');
       const md = (d0.getMonth() + 1) + '/' + d0.getDate();
       c.textAlign = 'left'; c.textBaseline = 'alphabetic';
-      c.fillStyle = '#253247'; c.font = '900 54px ' + FONT;
-      c.fillText(md + ' · 周' + '日一二三四五六'[d0.getDay()], 70, topPad + 88);
+      c.fillStyle = '#253247'; c.font = '900 52px ' + FONT;
+      c.fillText(md + ' · 周' + '日一二三四五六'[d0.getDay()], 70, topPad + 84);
       const full = ds.replace(/-/g, '/');
-      c.font = '800 34px ' + FONT;
+      c.font = '800 32px ' + FONT;
       const bw = c.measureText(full).width + 52;
-      rr(70, topPad + 122, bw, 62, 22); c.fillStyle = '#ddeefc'; c.fill();
-      c.fillStyle = '#2f80ed'; c.fillText(full, 96, topPad + 165);
+      rr(70, topPad + 116, bw, 58, 20); c.fillStyle = '#ddeefc'; c.fill();
+      c.fillStyle = '#2f80ed'; c.fillText(full, 96, topPad + 156);
       c.fillStyle = list.length ? '#8a97a8' : '#a9b5c4';
-      c.fillText(list.length ? '已完成 ' + doneN + '/' + list.length : '这一天还没有计划', 70, topPad + 248);
-      // 圆环进度
-      const cx = W - 165, cy = topPad + headH / 2, R = 86;
-      c.lineWidth = 22; c.lineCap = 'round';
+      c.fillText(list.length ? '已完成 ' + doneN + '/' + list.length : '这一天还没有计划', 70, topPad + 236);
+      // 进度圆环
+      const cx = W - 160, cy = topPad + headH / 2, R = 78;
+      c.lineWidth = 20; c.lineCap = 'round';
       c.strokeStyle = '#dfe9f5'; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
       if (pct > 0) { c.strokeStyle = '#3D9EF0'; c.beginPath(); c.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); c.stroke(); }
-      c.fillStyle = '#2f80ed'; c.font = '900 40px ' + FONT; c.textAlign = 'center';
-      c.fillText(pct + '%', cx, cy + 14);
-      c.textAlign = 'left';
-      // 任务卡列表
-      const priColor = (p) => p === 'high' ? '#e85d5d' : p === 'low' ? '#5fa8e8' : '#f5a623';
-      list.forEach((x, i) => {
-        const y = listTop + i * (cardH + cardGap);
-        const done = !!x.done;
-        rr(28, y, W - 56, cardH, 30); c.fillStyle = done ? '#e3eefb' : '#fdf3d9'; c.fill();
-        c.save(); rr(28, y, W - 56, cardH, 30); c.clip();
-        c.fillStyle = done ? '#7fc4ee' : priColor(x.pri);
-        c.fillRect(28, y, 12, cardH);
-        c.restore();
-        const bx = 74, by = y + (cardH - 56) / 2;
-        rr(bx, by, 56, 56, 16);
+      c.fillStyle = '#2f80ed'; c.font = '900 38px ' + FONT; c.textAlign = 'center';
+      c.fillText(pct + '%', cx, cy + 13); c.textAlign = 'left';
+      // 任务卡（按优先级上色；导出时隐藏右侧编辑/删除按钮）
+      let y = listTop0;
+      items.forEach((it) => {
+        const x = it.x, done = !!x.done, pr = PRI[x.pri] || PRI.p1;
+        rr(cardX, y, cardW, it.h, 28); c.fillStyle = pr.bg; c.fill();
+        c.save(); rr(cardX, y, cardW, it.h, 28); c.clip();
+        c.fillStyle = pr.stripe; c.fillRect(cardX, y, 12, it.h); c.restore();
+        rr(bx, y + 22, bs, bs, 16);
         if (done) {
           c.fillStyle = '#3dbe7b'; c.fill();
-          c.strokeStyle = '#fff'; c.lineWidth = 7; c.lineCap = 'round';
-          c.beginPath(); c.moveTo(bx + 14, by + 29); c.lineTo(bx + 25, by + 40); c.lineTo(bx + 43, by + 17); c.stroke();
+          c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round';
+          c.beginPath(); c.moveTo(bx + 14, y + 22 + 28); c.lineTo(bx + 24, y + 22 + 39); c.lineTo(bx + 41, y + 22 + 17); c.stroke();
         } else { c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#cfd9e6'; c.lineWidth = 4; c.stroke(); }
         c.fillStyle = done ? '#9aa7b5' : '#253247';
-        c.font = '800 40px ' + FONT;
-        c.fillText(String(x.disp || x.text || ''), 158, y + 66, W - 158 - 190);
-        const ts = planExportTimeStr(x);
-        c.font = '700 30px ' + FONT;
-        const tw = c.measureText(ts).width + 40;
-        rr(158, y + 88, tw, 48, 16); c.fillStyle = '#fbe7c8'; c.fill();
-        c.fillStyle = '#e8930c'; c.fillText(ts, 178, y + 122);
-        const ab = (ax, glyph) => {
-          rr(ax, y + (cardH - 64) / 2, 64, 64, 18); c.fillStyle = done ? '#f3f8fd' : '#f7efdc'; c.fill();
-          c.fillStyle = '#6b7a8c'; c.font = '700 34px ' + FONT; c.textAlign = 'center';
-          c.fillText(glyph, ax + 32, y + (cardH - 64) / 2 + 45); c.textAlign = 'left';
-        };
-        ab(W - 28 - 30 - 64 - 16, '✎');
-        ab(W - 28 - 30, '✕');
+        c.font = '800 ' + nameFont + 'px ' + FONT; c.textAlign = 'left';
+        it.lines.forEach((ln, i) => {
+          const ly = y + 46 + i * nameLineH;
+          if (done) { const w = c.measureText(ln).width; c.strokeStyle = '#9aa7b5'; c.lineWidth = 2; c.beginPath(); c.moveTo(nameX, ly - 13); c.lineTo(nameX + w, ly - 13); c.stroke(); }
+          c.fillText(ln, nameX, ly);
+        });
+        const ty = y + 22 + it.lines.length * nameLineH + 8;
+        rr(nameX, ty, it.tw, timeH, 12); c.fillStyle = done ? 'rgba(154,167,181,.18)' : '#fbe7c8'; c.fill();
+        c.fillStyle = done ? '#8a97a8' : '#c8771a'; c.font = '700 ' + timeFont + 'px ' + FONT;
+        c.fillText(it.ts, nameX + timePadX, ty + timeH - 11);
+        y += it.h + 16;
       });
-      if (!list.length) {
-        c.fillStyle = '#9fb0c4'; c.font = '700 34px ' + FONT; c.textAlign = 'center';
-        c.fillText('这一天还没有计划', W / 2, listTop + 60); c.textAlign = 'left';
-      }
-      // 水印：右下角 🐱 喵上岸
-      c.font = '48px ' + FONT; c.fillText('🐱', W - 250, H - 46);
-      c.fillStyle = '#33475e'; c.font = '900 46px ' + FONT; c.fillText('喵上岸', W - 188, H - 44);
-      // v1.53p：导出 JPG —— 优先调原生桥存进系统相册（Android 10+ 走 MediaStore，无需权限）；
-      // 网页版 / 桥不可用时弹预览：长按图片保存到相册 + 下载按钮兜底。
-      // 关键修复：旧实现只 a.download(dataURL) 在 Android WebView 里会被静默忽略（download 属性不处理 data: URL），
-      // toast 却无条件显示「已导出」→ 用户以为成功但相册里没有图。
-      const dataUrl = cv.toDataURL('image/jpeg', 0.92);
-      const fname = '喵上岸计划_' + ds + '.jpg';
-      const br = getBridge();
-      const pSave = (br && typeof br.saveImage === 'function')
-        ? br.saveImage({ base64: dataUrl.split(',')[1], filename: fname })
-        : null;
-      if (pSave && typeof pSave.then === 'function') {
-        pSave.then((r) => {
-          if (r && r.ok) { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); }
-          else showPlanImgPreview(dataUrl, fname, false);
-        }).catch(() => showPlanImgPreview(dataUrl, fname, false));
-      } else {
-        showPlanImgPreview(dataUrl, fname, false);
-      }
+      if (!list.length) { c.fillStyle = '#9fb0c4'; c.font = '700 32px ' + FONT; c.textAlign = 'center'; c.fillText('这一天还没有计划', W / 2, listTop0 + 50); c.textAlign = 'left'; }
+      // 水印：右下角 小白猫（app 图标那只，透明 PNG）+ 蓝色「喵上岸」
+      const drawMascot = (img) => {
+        c.font = '900 40px ' + FONT;
+        const tw2 = c.measureText('喵上岸').width, mw = 48, mh = 48, gap = 10;
+        const left = cardRight - (mw + gap + tw2);
+        if (img) c.drawImage(img, left, H - 30 - mh, mw, mh);
+        c.fillStyle = '#2f80ed'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+        c.fillText('喵上岸', left + mw + gap, H - 30);
+      };
+      const doExport = () => {
+        try {
+          const dataUrl = cv.toDataURL('image/jpeg', 0.92);
+          const fname = '喵上岸计划_' + ds + '.jpg';
+          const br = getBridge();
+          const pSave = (br && typeof br.saveImage === 'function') ? br.saveImage({ base64: dataUrl.split(',')[1], filename: fname }) : null;
+          if (pSave && typeof pSave.then === 'function') {
+            pSave.then((r) => { if (r && r.ok) { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); } else showPlanImgPreview(dataUrl, fname, false); }).catch(() => showPlanImgPreview(dataUrl, fname, false));
+          } else showPlanImgPreview(dataUrl, fname, false);
+        } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
+      };
+      let _mascot = null;
+      const loadMascot = (cb) => {
+        if (_mascot && _mascot.complete && _mascot.naturalWidth) { cb(_mascot); return; }
+        const img = new Image();
+        img.onload = () => { _mascot = img; cb(img); };
+        img.onerror = () => { cb(null); };
+        img.src = 'icons/cat-plan.png';
+      };
+      loadMascot((img) => { drawMascot(img); doExport(); });
     } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
   }
   // v1.53p：计划图片预览（原生保存不可用时的兜底：长按保存到相册 / 点按钮下载）
