@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v40';   // v40——v1.53q：计划图片导出重做（卡片按优先级 p0~p3 上色、已完成不再刷蓝、计划名自动换行、时间字号缩小、隐藏编辑/删除按钮、背景上浅下深渐变、右下角透明小白猫+蓝色喵上岸水印）/ 工具行六按钮缩小且 ⚠️(#planUnfin) 夺回等宽等高；index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v41';   // v41——v1.53r：英语词库大清洗（data-en.js 9205→8814 词：删词根/词缀/缩写/专有名词/拼接等 391 条无效词条，全量回填 vocab5 释义+音标+例句翻译，清掉 A/<"/； 等脏字符）；桌面组件跨天计划最后一天按截止时间排；倒数日详情已过去显示「日期+已过天数」且✕/返回回列表；长单词字号自适应。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

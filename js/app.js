@@ -1295,8 +1295,10 @@
       let time = "";
       const cross = !!(x.tplId && x.dateStart && x.dateEnd && x.dateStart !== x.dateEnd);
       if (cross) {
-        // 跨天计划：第一天（dateStart）显示设置的开始时间；其余天视为全天 → 显示 00:00
-        time = (x.date === x.dateStart) ? (x.time || "") : "00:00";
+        // 跨天计划：第一天（dateStart）显示开始时间；最后一天（dateEnd）显示截止时间(timeEnd)；中间天为全天 → 00:00
+        if (x.date === x.dateStart) time = x.time || "";
+        else if (x.date === x.dateEnd) time = x.timeEnd || x.time || "";
+        else time = "00:00";
       } else if (x.timeMode && x.timeMode !== "none") {
         time = x.time || x.timeEnd || "";
       }
@@ -2961,16 +2963,19 @@
   function openCdDetail(c) {
     if (window.cdTick) { clearInterval(window.cdTick); window.cdTick = null; }
     const t = CD_TYPES[c.type] || CD_TYPES.countdown;
-    const occ = cdNextOccurrence(c);
+    const info = cdListInfo(c);   // v1.53r：统一用 cdListInfo —— 已过去的纪念日显示「日期 + 已过天数」，未到显示倒计时/还有天数
     openModal(t.icon + ' ' + (c.type === 'birthday' ? (c.person + ' 的生日') : c.name), `
       <div class="cd-detail">
         <div class="cd-type-tag t-${c.type}">${t.icon} ${t.label}</div>
-        <div class="cd-days-big" id="cdBig">${occ ? fmtCountdown(occ) : '已过去'}</div>
-        <div class="cd-sub">目标日：${occ ? fmtDate(occ) : '—'}</div>
+        <div class="cd-days-big" id="cdBig">${info.text}</div>
+        <div class="cd-sub">目标日：${info.sub || '—'}</div>
       </div>
       <div class="btn-row"><button class="gbtn" id="cdBack">返回</button><button class="gbtn" id="cdEdit">编辑</button></div>`, 'lg');
     const m = document.getElementById('modalMask'); if (!m) return;
-    if (occ) { const big = m.querySelector('#cdBig'); window.cdTick = setInterval(() => { big.textContent = fmtCountdown(occ); }, 1000); }
+    // v1.53r：未到的才跑每秒倒计时；已过去的(info.days<0)显示「已经 X 天」静态即可
+    if (info.days !== null && info.days >= 0) { const big = m.querySelector('#cdBig'); window.cdTick = setInterval(() => { big.textContent = fmtCountdown(cdNextOccurrence(c)); }, 1000); }
+    // v1.53r：✕ 与「返回」都回倒数日列表（不直接退回计划主页面）
+    m.querySelector('.modal-x').onclick = () => openCdList();
     m.querySelector('#cdBack').onclick = () => openCdList();
     m.querySelector('#cdEdit').onclick = () => openCdEdit(JSON.parse(JSON.stringify(c)), false);
   }
@@ -4133,7 +4138,7 @@
       return { e: x.e || (EN_WORDS[i] && EN_WORDS[i].e) || '', et: x.et || '' };
     }
     const w = EN_WORDS[i] || {};
-    return { e: w.e || '', et: '' };
+    return { e: w.e || '', et: w.et || '' };
   }
   let enRevealed = false;   // 当前单词释义是否已揭示：仅在当前单词有效，离开（上一个/下一个/跳转/滑条）即重置，不跨单词持久化
   function renderEnWord() {
@@ -4159,7 +4164,7 @@
       <div class="word-card">
         <div class="wc-idx">${idx + 1} / ${EN_WORDS.length}</div>
         <div class="wc-fav ${fav ? 'on' : ''}" data-fav>★</div>
-        <div class="wc-w">${esc(w.w)}</div>
+        <div class="wc-w" style="font-size:${Math.max(15, 32 - Math.max(0, w.w.length - 9) * 1.8)}px">${esc(w.w)}</div>
         ${w.p ? `<div class="wc-p">${esc(w.p)}</div>` : ''}
         <div class="wc-m ${revealed ? '' : 'wc-hide'}" data-mean>${esc(w.m)}</div>
         ${ex.e ? `<div class="wc-e ${revealed ? '' : 'wc-hide'}" data-eg>${esc(ex.e)}</div>` : ''}
@@ -4268,6 +4273,7 @@
     if (_wcClearStyleInjected) return; _wcClearStyleInjected = true;
     const st = document.createElement('style');
     st.textContent = `
+.wc-w{word-break:break-word;overflow-wrap:anywhere;max-width:94%;margin:14px auto 6px;line-height:1.25;text-align:center;font-weight:800;color:#222}
 .wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
 .wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
 .wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1.5px solid #e0486a;background:#ffd2dc;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}
