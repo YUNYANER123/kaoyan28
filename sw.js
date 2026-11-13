@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v41';   // v41——v1.53r：英语词库大清洗（data-en.js 9205→8814 词：删词根/词缀/缩写/专有名词/拼接等 391 条无效词条，全量回填 vocab5 释义+音标+例句翻译，清掉 A/<"/； 等脏字符）；桌面组件跨天计划最后一天按截止时间排；倒数日详情已过去显示「日期+已过天数」且✕/返回回列表；长单词字号自适应。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v42';   // v42——v1.53r②：补齐剩余基础词音标（dictionaryapi.dev 回填 94 条，phonetics 覆盖 8793/8814；余 21 条该 API 仅音频无 IPA 文本，无法取）；其余同 v41（词库大清洗 9205→8814 + 跨天计划最后一天按截止时间排 + 倒数日详情已过去显示「日期+已过天数」且✕/返回回列表 + 长单词字号自适应）。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
