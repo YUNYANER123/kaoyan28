@@ -1016,6 +1016,40 @@
     if (d && typeof d[store.mode] === 'number') return Math.max(0, d[store.mode]);
     return dflt == null ? 0 : dflt;
   }
+  // v1.53r④：跨版本还原已背/标星/三轮强化进度 —— 旧版按「单词位置下标」存进度，词表删词/重排后下标错位。
+  // 修复：导入/启动(migrate)时，若检测到旧版(词表更大)备份，用内嵌的旧版词表把每个旧下标还原成单词，再在当前词表里查新位置；查不到(被删的词)就丢弃。当前版本导出的备份带 wordsVer 戳，戳一致则跳过重锚定。
+  const WORDS_VER = '8814-v1.53r';
+  const LEGACY_LISTS = { 9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null), 9232: (typeof LEGACY_WORDS_9232 !== 'undefined' ? LEGACY_WORDS_9232 : null) };
+  function reanchorWords(w) {
+    const idxAll = [].concat(w.learned || [], w.favs || [], (w.rounds && w.rounds.length ? w.rounds.flat() : []), w.ultimate || [], [w.idx || 0]).filter(function (x) { return typeof x === 'number' && !isNaN(x); });
+    const maxIdx = idxAll.length ? Math.max.apply(null, idxAll) : -1;
+    // 当前版本(本修复后)导出的备份都带 wordsVer 戳且等于 WORDS_VER，戳一致说明下标已经是当前词表的位置，直接跳过。
+    // 旧版(1.69 等无戳，或戳不一致)备份一律走重锚定：用内嵌旧词表把旧下标还原成单词再映射到当前位置。
+    if ((w.wordsVer || '') === WORDS_VER) return 0;
+    let legacy = null;
+    if (maxIdx <= 9205) legacy = LEGACY_LISTS[9205];
+    else if (maxIdx <= 9232) legacy = LEGACY_LISTS[9232];
+    else legacy = LEGACY_LISTS[9232];
+    if (!legacy || !legacy.length) return 0;
+    const curMap = {}; const curMapL = {};
+    for (let i = 0; i < EN_WORDS.length; i++) { const k = EN_WORDS[i].w; if (!(k in curMap)) curMap[k] = i; const kl = k.toLowerCase(); if (!(kl in curMapL)) curMapL[kl] = i; }
+    let dropped = 0;
+    const remap = function (oldIdx) {
+      if (typeof oldIdx !== 'number' || oldIdx < 0 || oldIdx >= legacy.length) return -1;
+      const wd = legacy[oldIdx];
+      if (wd in curMap) return curMap[wd];
+      const wdl = wd.toLowerCase(); // 兜底：v1.53r 把月份/星期首字母大写(sunday→Sunday)，纯大小写差异应视为同一词
+      return (wdl in curMapL) ? curMapL[wdl] : -1;
+    };
+    const filt = function (arr) { return (arr || []).map(remap).filter(function (i) { return i >= 0; }); };
+    const nl = filt(w.learned); dropped += (w.learned ? w.learned.length : 0) - nl.length; w.learned = nl;
+    const nf = filt(w.favs); dropped += (w.favs ? w.favs.length : 0) - nf.length; w.favs = nf;
+    w.rounds = ((w.rounds && w.rounds.length) ? w.rounds : [[], [], []]).map(function (r) { const nr = filt(r); dropped += (r ? r.length : 0) - nr.length; return nr; });
+    const nu = filt(w.ultimate); dropped += (w.ultimate ? w.ultimate.length : 0) - nu.length; w.ultimate = nu;
+    const ni2 = remap(w.idx); if (ni2 >= 0) w.idx = ni2;
+    if (w.idx < 0 || w.idx >= EN_WORDS.length) w.idx = 0;
+    return dropped;
+  }
   function migrate(s) {
     const d = defaults();
     const merged = Object.assign(d, s, {
@@ -1078,6 +1112,9 @@
     if (merged.examDate && merged.examDate.length >= 10) {
       merged.examDate = merged.examDate.slice(0, 10) + 'T00:00:00';
     }
+    // v1.53r④：跨版本进度重锚定（词表删词/重排后，按位置下标的旧备份会错位；用内嵌旧词表还原成单词再映射新位置）
+    reanchorWords(merged.words);
+    merged.words.wordsVer = WORDS_VER;
     return merged;
   }
   function save() {

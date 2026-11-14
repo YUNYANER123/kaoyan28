@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v43';   // v43——v1.53r③：①21 词音标人工补全（dictionaryapi.dev+Wiktionary 不可达，改用 RP 音标手工填，覆盖 8814/8814=100%）②计划导出图重做：白框更高+内部留白更多、进度圆环缩小(R78→62/线宽20→16)、每个计划卡片更高(nameLineH44→52)、时间文字全部橙色(#CF8B32)且浅橙底、有备注的计划时间右侧加📝、背景渐变吸色改为 #D6EBFE→#B3D9FE、右下角水印仅透明小猫(去「喵上岸」文字)③修预览页「↓下载图片」按钮：仅在非原生 App(无 saveImage)时显示，原生 App 已直接写相册故隐藏，消除摆设按钮。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v44';   // v44——v1.53r④：跨版本背单词进度重锚定修复。词表 v1.53r 删词/重排后，旧版（如 1.69=9205 词）备份按位置下标的 learned/favs/rounds/ultimate/idx 会错位；migrate 时用内嵌旧词表（LEGACY_WORDS_9205/9232）把旧下标还原成单词再映射当前 8814 词表位置，被删词丢弃、月份/星期大小写差异(如 sunday→Sunday)兜底恢复。当前版备份带 wordsVer 戳（8814-v1.53r），戳一致则跳过重锚定。js/app.js 与 js/data-en.js 均改，故升 v44。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
