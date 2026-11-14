@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v42';   // v42——v1.53r②：补齐剩余基础词音标（dictionaryapi.dev 回填 94 条，phonetics 覆盖 8793/8814；余 21 条该 API 仅音频无 IPA 文本，无法取）；其余同 v41（词库大清洗 9205→8814 + 跨天计划最后一天按截止时间排 + 倒数日详情已过去显示「日期+已过天数」且✕/返回回列表 + 长单词字号自适应）。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v43';   // v43——v1.53r③：①21 词音标人工补全（dictionaryapi.dev+Wiktionary 不可达，改用 RP 音标手工填，覆盖 8814/8814=100%）②计划导出图重做：白框更高+内部留白更多、进度圆环缩小(R78→62/线宽20→16)、每个计划卡片更高(nameLineH44→52)、时间文字全部橙色(#CF8B32)且浅橙底、有备注的计划时间右侧加📝、背景渐变吸色改为 #D6EBFE→#B3D9FE、右下角水印仅透明小猫(去「喵上岸」文字)③修预览页「↓下载图片」按钮：仅在非原生 App(无 saveImage)时显示，原生 App 已直接写相册故隐藏，消除摆设按钮。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

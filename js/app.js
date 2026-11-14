@@ -3089,11 +3089,11 @@
       const doneN = list.filter((x) => x.done).length;
       const pct = list.length ? Math.round(doneN / list.length * 100) : 0;
       const FONT = '"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
-      const W = 720, topPad = 28, headH = 270, headGap = 22;
+      const W = 720, topPad = 28, headH = 320, headGap = 22;
       const cardX = 28, cardW = W - 56, cardRight = cardX + cardW;
       const bx = cardX + 24, bs = 54;
       const nameX = bx + bs + 12, nameMaxW = cardRight - 18 - nameX;
-      const nameFont = 33, nameLineH = 44, timeFont = 22, timeH = 36, timePadX = 14;
+      const nameFont = 33, nameLineH = 52, timeFont = 22, timeH = 38, timePadX = 14;
       // 优先级配色（对齐线上 styles.css .task.p0~p3）：p1=浅黄 / p2=浅绿 / p3=浅蓝 / p0=浅红。
       // 关键：完成态只让文字变灰加删除线，背景保持优先级色（不再把已完成刷成蓝色）。
       const PRI = {
@@ -3124,16 +3124,16 @@
         const ts = planExportTimeStr(x);
         c.font = '700 ' + timeFont + 'px ' + FONT;
         const tw = c.measureText(ts).width + timePadX * 2;
-        const h = 22 + lines.length * nameLineH + 12 + timeH + 18;
+        const h = 30 + lines.length * nameLineH + 14 + timeH + 22;
         return { x, lines, ts, tw, h };
       });
       const listTop0 = topPad + headH + headGap;
       const H = listTop0 + items.reduce((s, it) => s + it.h + 16, 0) + (list.length ? 120 : 80);
       cv.width = W; cv.height = H;
       // ===== 绘制 =====
-      // 背景：浅蓝渐变，上浅下深一点点（对齐图1效果）
+      // 背景：浅蓝渐变，上浅下深（吸色对齐用户效果图 #D6EBFE → #B3D9FE）
       const bg = c.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, '#c6e0f5'); bg.addColorStop(1, '#a6c9ea');
+      bg.addColorStop(0, '#D6EBFE'); bg.addColorStop(1, '#B3D9FE');
       c.fillStyle = bg; c.fillRect(0, 0, W, H);
       // 头部日期卡
       rr(cardX, topPad, cardW, headH, 34); c.fillStyle = '#ffffff'; c.fill();
@@ -3141,21 +3141,21 @@
       const md = (d0.getMonth() + 1) + '/' + d0.getDate();
       c.textAlign = 'left'; c.textBaseline = 'alphabetic';
       c.fillStyle = '#253247'; c.font = '900 52px ' + FONT;
-      c.fillText(md + ' · 周' + '日一二三四五六'[d0.getDay()], 70, topPad + 84);
+      c.fillText(md + ' · 周' + '日一二三四五六'[d0.getDay()], 72, topPad + 104);
       const full = ds.replace(/-/g, '/');
       c.font = '800 32px ' + FONT;
-      const bw = c.measureText(full).width + 52;
-      rr(70, topPad + 116, bw, 58, 20); c.fillStyle = '#ddeefc'; c.fill();
-      c.fillStyle = '#2f80ed'; c.fillText(full, 96, topPad + 156);
+      const bw = c.measureText(full).width + 56;
+      rr(72, topPad + 148, bw, 58, 20); c.fillStyle = '#ddeefc'; c.fill();
+      c.fillStyle = '#2f80ed'; c.fillText(full, 100, topPad + 188);
       c.fillStyle = list.length ? '#8a97a8' : '#a9b5c4';
-      c.fillText(list.length ? '已完成 ' + doneN + '/' + list.length : '这一天还没有计划', 70, topPad + 236);
+      c.fillText(list.length ? '已完成 ' + doneN + '/' + list.length : '这一天还没有计划', 72, topPad + headH - 42);
       // 进度圆环
-      const cx = W - 160, cy = topPad + headH / 2, R = 78;
-      c.lineWidth = 20; c.lineCap = 'round';
+      const cx = W - 150, cy = topPad + headH / 2, R = 62;
+      c.lineWidth = 16; c.lineCap = 'round';
       c.strokeStyle = '#dfe9f5'; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
       if (pct > 0) { c.strokeStyle = '#3D9EF0'; c.beginPath(); c.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); c.stroke(); }
-      c.fillStyle = '#2f80ed'; c.font = '900 38px ' + FONT; c.textAlign = 'center';
-      c.fillText(pct + '%', cx, cy + 13); c.textAlign = 'left';
+      c.fillStyle = '#2f80ed'; c.font = '900 32px ' + FONT; c.textAlign = 'center';
+      c.fillText(pct + '%', cx, cy + 11); c.textAlign = 'left';
       // 任务卡（按优先级上色；导出时隐藏右侧编辑/删除按钮）
       let y = listTop0;
       items.forEach((it) => {
@@ -3176,31 +3176,33 @@
           if (done) { const w = c.measureText(ln).width; c.strokeStyle = '#9aa7b5'; c.lineWidth = 2; c.beginPath(); c.moveTo(nameX, ly - 13); c.lineTo(nameX + w, ly - 13); c.stroke(); }
           c.fillText(ln, nameX, ly);
         });
-        const ty = y + 22 + it.lines.length * nameLineH + 8;
-        rr(nameX, ty, it.tw, timeH, 12); c.fillStyle = done ? 'rgba(154,167,181,.18)' : '#fbe7c8'; c.fill();
-        c.fillStyle = done ? '#8a97a8' : '#c8771a'; c.font = '700 ' + timeFont + 'px ' + FONT;
-        c.fillText(it.ts, nameX + timePadX, ty + timeH - 11);
+        const ty = y + 26 + it.lines.length * nameLineH + 8;
+        rr(nameX, ty, it.tw, timeH, 12); c.fillStyle = '#fbe7c8'; c.fill();
+        c.fillStyle = '#CF8B32'; c.font = '700 ' + timeFont + 'px ' + FONT;
+        c.fillText(it.ts, nameX + timePadX, ty + timeH - 12);
+        if (x.note) { c.font = '700 ' + timeFont + 'px ' + FONT; c.fillText('📝', nameX + it.tw + 14, ty + timeH - 12); }
         y += it.h + 16;
       });
       if (!list.length) { c.fillStyle = '#9fb0c4'; c.font = '700 32px ' + FONT; c.textAlign = 'center'; c.fillText('这一天还没有计划', W / 2, listTop0 + 50); c.textAlign = 'left'; }
-      // 水印：右下角 小白猫（app 图标那只，透明 PNG）+ 蓝色「喵上岸」
+      // 水印：右下角透明小白猫（用户提供的戴耳机小猫 PNG），不做「喵上岸」文字
       const drawMascot = (img) => {
-        c.font = '900 40px ' + FONT;
-        const tw2 = c.measureText('喵上岸').width, mw = 48, mh = 48, gap = 10;
-        const left = cardRight - (mw + gap + tw2);
-        if (img) c.drawImage(img, left, H - 30 - mh, mw, mh);
-        c.fillStyle = '#2f80ed'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
-        c.fillText('喵上岸', left + mw + gap, H - 30);
+        const mw = 58, mh = 58, mx = cardRight - mw - 14, my = H - mh - 18;
+        if (img) { c.drawImage(img, mx, my, mw, mh); }
       };
       const doExport = () => {
         try {
           const dataUrl = cv.toDataURL('image/jpeg', 0.92);
           const fname = '喵上岸计划_' + ds + '.jpg';
           const br = getBridge();
-          const pSave = (br && typeof br.saveImage === 'function') ? br.saveImage({ base64: dataUrl.split(',')[1], filename: fname }) : null;
-          if (pSave && typeof pSave.then === 'function') {
-            pSave.then((r) => { if (r && r.ok) { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); } else showPlanImgPreview(dataUrl, fname, false); }).catch(() => showPlanImgPreview(dataUrl, fname, false));
-          } else showPlanImgPreview(dataUrl, fname, false);
+          const nativeSave = !!(br && typeof br.saveImage === 'function');
+          if (nativeSave) {
+            const pSave = br.saveImage({ base64: dataUrl.split(',')[1], filename: fname });
+            if (pSave && typeof pSave.then === 'function') {
+              pSave.then((r) => { if (r && r.ok) toast('已保存到相册 🖼️'); else toast('保存失败，可长按图片保存'); showPlanImgPreview(dataUrl, fname, true); }).catch(() => { toast('保存失败，可长按图片保存'); showPlanImgPreview(dataUrl, fname, true); });
+            } else { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); }
+          } else {
+            showPlanImgPreview(dataUrl, fname, false);
+          }
         } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
       };
       let _mascot = null;
@@ -3214,12 +3216,14 @@
       loadMascot((img) => { drawMascot(img); doExport(); });
     } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
   }
-  // v1.53p：计划图片预览（原生保存不可用时的兜底：长按保存到相册 / 点按钮下载）
-  function showPlanImgPreview(dataUrl, fname, saved) {
+  // v1.53r：计划图片预览。「↓下载图片」按钮仅在非原生 App（无 saveImage 能力）时显示；原生 App 已直接写相册，该按钮纯属摆设，故隐藏。
+  function showPlanImgPreview(dataUrl, fname, nativeSave) {
+    const hint = nativeSave ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）' : '长按图片可保存到相册；电脑上可点下方按钮下载';
+    const dl = nativeSave ? '' : '      <a class="gbtn plan-img-dl" download="' + fname + '" href="' + dataUrl + '">⬇ 下载图片</a>';
     openModal('🖨️ 计划图片', `
       <div class="plan-img-wrap"><img class="plan-img" src="${dataUrl}" alt="当日计划图片"></div>
-      <div class="hint" style="margin:10px 0 8px">${saved ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）' : '长按图片可保存到相册；电脑上可点下方按钮下载'}</div>
-      <a class="gbtn plan-img-dl" download="${fname}" href="${dataUrl}">⬇ 下载图片</a>
+      <div class="hint" style="margin:10px 0 8px">${hint}</div>
+${dl}
     `, 'lg');
   }
   // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
