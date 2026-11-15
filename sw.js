@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v44';   // v44——v1.53r④：跨版本背单词进度重锚定修复。词表 v1.53r 删词/重排后，旧版（如 1.69=9205 词）备份按位置下标的 learned/favs/rounds/ultimate/idx 会错位；migrate 时用内嵌旧词表（LEGACY_WORDS_9205/9232）把旧下标还原成单词再映射当前 8814 词表位置，被删词丢弃、月份/星期大小写差异(如 sunday→Sunday)兜底恢复。当前版备份带 wordsVer 戳（8814-v1.53r），戳一致则跳过重锚定。js/app.js 与 js/data-en.js 均改，故升 v44。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v45';   // v45——v1.53r⑤：5 bug 修复。恢复英语写作/阅读/翻译/单词详情数据(EN_SENTENCES等6数组从v18 f5d1c840ee 还原追加到 data-en.js 末尾)、cat-plan.png 改 1024×1024 正方形(修侧栏图标溢出)、长单词字号阈值调整(app.js)、计划导出卡片留白上下对称(app.js)。data-en.js 与 icons 均改→升 v45。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

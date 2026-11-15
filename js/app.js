@@ -3161,7 +3161,7 @@
         const ts = planExportTimeStr(x);
         c.font = '700 ' + timeFont + 'px ' + FONT;
         const tw = c.measureText(ts).width + timePadX * 2;
-        const h = 30 + lines.length * nameLineH + 14 + timeH + 22;
+        const h = 22 + lines.length * nameLineH + 12 + timeH + 22;
         return { x, lines, ts, tw, h };
       });
       const listTop0 = topPad + headH + headGap;
@@ -4205,7 +4205,7 @@ ${dl}
       <div class="word-card">
         <div class="wc-idx">${idx + 1} / ${EN_WORDS.length}</div>
         <div class="wc-fav ${fav ? 'on' : ''}" data-fav>★</div>
-        <div class="wc-w" style="font-size:${Math.max(15, 32 - Math.max(0, w.w.length - 9) * 1.8)}px">${esc(w.w)}</div>
+        <div class="wc-w" style="font-size:${w.w.length <= 17 ? 32 : Math.max(20, 32 - (w.w.length - 17) * 0.8)}px">${esc(w.w)}</div>
         ${w.p ? `<div class="wc-p">${esc(w.p)}</div>` : ''}
         <div class="wc-m ${revealed ? '' : 'wc-hide'}" data-mean>${esc(w.m)}</div>
         ${ex.e ? `<div class="wc-e ${revealed ? '' : 'wc-hide'}" data-eg>${esc(ex.e)}</div>` : ''}
