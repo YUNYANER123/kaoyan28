@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v49';   // v49——v1.53r⑨：按用户录屏实证，备份 JSON 约 480KB，r⑥/r⑦/r⑧ 都把整份 store 一次性跨 JS↔原生通道传（插件参数 / evaluateJavascript 返回值），Android WebView bridge 对单次大字符串会截断或返回 null，写入全部静默失败、原生文件从未生成。r⑨ 改为分片：所有跨 bridge 字符串 <=12000 字符，逐片串行读写；WebView 改为遍历 View 树获取（不再依赖 getBridge()）；轮询 2s→250ms，保证「导入后立刻清后台」也来得及写第一份存档。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v50';   // v1.53r⑩：真实根因是 r④ 新增的 const WORDS_VER / LEGACY_LISTS 声明位置在「let store = load()」之后，冷启动顶层执行 load() → migrate() → reanchorWords() 访问暂时性死区(TDZ)常量，抛 ReferenceError 被空 catch 吞掉，直接返回 defaults() → 全部归零。r⑩ 把常量上移、load() 增加按原始存档兜底、save() 失败改为可见弹窗，并新增 JS 主动分片镜像到原生文件。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',

@@ -923,17 +923,37 @@
 
   /* ---------- 存储 ---------- */
   const KEY = 'kaoyan28_v1';
-  const NATIVE_TS_KEY = 'kaoyan28_v1_ts';  // 时间戳供原生 StoreKeeper 判断是否需要备份（不污染 store 结构）
+  const NATIVE_TS_KEY = 'kaoyan28_v1_ts';
+  const CLEARED_KEY = 'kaoyan28_v1_cleared';
+  const NCHUNK = 12000;             // 跨 JS↔原生 bridge 的单片上限（字符）
+  // v1.53r⑩ 关键：这两个 const 必须在 let store = load() 之前完成初始化！
+  // r④ 把它们放在 reanchorWords 附近（本文件后面 ~4800 字符），而 load() 是顶层立即执行的：
+  // migrate() → reanchorWords() 访问尚在暂时性死区(TDZ)的 const → ReferenceError →
+  // 被 load() 的空 catch 吞掉 → defaults() → 用户重进 App 后数据全归零。
+  const WORDS_VER = '8814-v1.53r';
+  const LEGACY_LISTS = { 9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null), 9232: (typeof LEGACY_WORDS_9232 !== 'undefined' ? LEGACY_WORDS_9232 : null) };
+  let _saveError = '';
+  let _lastLoadError = '';
   let store = load();
 
   function load() {
-    // v1.53r⑧：存档的备份/恢复全部由原生 StoreKeeper 用 evaluateJavascript 主动完成，
-    // 页面这里只管 localStorage，首屏即时渲染；恢复后由 window.__kaoyanRestore 重绘。
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) return migrate(JSON.parse(raw));
-    } catch (e) {}
-    return defaults();
+    let raw = '';
+    try { raw = localStorage.getItem(KEY) || ''; } catch (e) { }
+    if (!raw) return defaults();
+    let parsed = null;
+    try { parsed = JSON.parse(raw); }
+    catch (e) {
+      _lastLoadError = 'JSON 解析失败: ' + ((e && e.message) || e);
+      try { console.error('[kaoyan28] ' + _lastLoadError); } catch (x) { }
+      return defaults();
+    }
+    try { return migrate(parsed); }
+    catch (me) {
+      // 迁移逻辑再出任何异常，也绝不把用户数据整体清空：按原始存档兜底。
+      _lastLoadError = 'migrate 异常(已按原始存档兜底): ' + ((me && me.message) || me);
+      try { console.error('[kaoyan28] ' + _lastLoadError); } catch (x) { }
+      try { return Object.assign(defaults(), parsed); } catch (x) { return defaults(); }
+    }
   }
   function defaults() {
     return {
@@ -1021,8 +1041,6 @@
   }
   // v1.53r④：跨版本还原已背/标星/三轮强化进度 —— 旧版按「单词位置下标」存进度，词表删词/重排后下标错位。
   // 修复：导入/启动(migrate)时，若检测到旧版(词表更大)备份，用内嵌的旧版词表把每个旧下标还原成单词，再在当前词表里查新位置；查不到(被删的词)就丢弃。当前版本导出的备份带 wordsVer 戳，戳一致则跳过重锚定。
-  const WORDS_VER = '8814-v1.53r';
-  const LEGACY_LISTS = { 9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null), 9232: (typeof LEGACY_WORDS_9232 !== 'undefined' ? LEGACY_WORDS_9232 : null) };
   function reanchorWords(w) {
     const idxAll = [].concat(w.learned || [], w.favs || [], (w.rounds && w.rounds.length ? w.rounds.flat() : []), w.ultimate || [], [w.idx || 0]).filter(function (x) { return typeof x === 'number' && !isNaN(x); });
     const maxIdx = idxAll.length ? Math.max.apply(null, idxAll) : -1;
@@ -1120,14 +1138,108 @@
     merged.words.wordsVer = WORDS_VER;
     return merged;
   }
-  function save() {
-    // v1.53r⑧：只写 localStorage。原生 StoreKeeper 每 2 秒 / onPause 会用
-    // evaluateJavascript 主动把 KEY + NATIVE_TS_KEY 备份到 getFilesDir()，页面不调任何 bridge。
+  function saveFail(msg) {
+    _saveError = msg;
+    try { console.error('[kaoyan28] 保存失败: ' + msg); } catch (e) { }
+    // 延后弹：旧版 toast('保存失败') 会被 importData 紧接着的「导入成功」盖掉，用户永远看不到
+    setTimeout(() => {
+      try { alert('⚠️ 数据保存失败：' + msg + '\n本次修改未写入本机，请先「导出备份」再退出！'); }
+      catch (e) { }
+    }, 700);
+  }
+  function save(skipNativeMirror) {
     let json = '';
     try { json = JSON.stringify(store); } catch (e) { json = ''; }
-    try { localStorage.setItem(KEY, json); localStorage.setItem(NATIVE_TS_KEY, String(Date.now())); }
-    catch (e) { toast('保存失败：存储空间不足'); }
+    if (!json) { saveFail('数据序列化失败'); return; }
+    const ts = Date.now();
+    try {
+      localStorage.setItem(KEY, json);
+      localStorage.setItem(NATIVE_TS_KEY, String(ts));
+      _saveError = '';
+    } catch (e) { saveFail((e && e.name) ? e.name : 'localStorage 写入失败'); }
+    if (!skipNativeMirror) nativeMirrorSave(json, ts);
     pushWidgetSnapshot();
+  }
+
+  /* ============ v1.53r⑩：JS 主动把存档分片镜像到原生文件 ============
+   * r⑥(addJavascriptInterface) / r⑦(插件被动) / r⑧⑨(evaluateJavascript 轮询) 都靠
+   * 「原生主动来找 WebView」，三次都因 bridge 时序或取不到 WebView 而空跑。
+   * 这里反过来：页面 save() 时自己调插件（registerPlugin 在 super.onCreate 之前，
+   * 与桌面组件同一条已验证可用的通道），每片 <= 12000 字符写进
+   * getFilesDir()/kaoyan_store.json，fsync + 原子改名。冷启动本地为空/较旧时再分片读回。
+   */
+  let _nativeBusy = false;
+  let _nativeQueued = null;
+  function getBridgeSafe() {
+    try { return (typeof getBridge === 'function') ? getBridge() : null; }
+    catch (e) { return null; }
+  }
+  function getStoreBridge() {
+    let br = getBridgeSafe();
+    if (br && typeof br.storePutStart === 'function' && typeof br.storeGetMeta === 'function') return br;
+    // 部分 Capacitor 版本的 registerPlugin 代理只暴露已知方法，回退到原生注册对象
+    try {
+      const P = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.KaoyanBridge;
+      if (P && typeof P.storePutStart === 'function') return P;
+    } catch (e) { }
+    return null;
+  }
+  function nativeMirrorSave(json, ts) {
+    let br;
+    try { br = getStoreBridge(); } catch (e) { return; }
+    if (!br || typeof br.storePutStart !== 'function') return;
+    const job = { json: json, ts: ts };
+    if (_nativeBusy) { _nativeQueued = job; return; }
+    runNativeMirror(job);
+  }
+  function runNativeMirror(job) {
+    _nativeBusy = true;
+    const done = () => {
+      _nativeBusy = false;
+      if (_nativeQueued) { const q = _nativeQueued; _nativeQueued = null; runNativeMirror(q); }
+    };
+    try {
+      const br = getStoreBridge();
+      if (!br) { done(); return; }
+      const n = Math.ceil(job.json.length / NCHUNK);
+      let p = Promise.resolve(br.storePutStart({ ts: String(job.ts), n: String(n), len: String(job.json.length) }));
+      for (let i = 0; i < n; i++) {
+        const idx = i;
+        p = p.then(() => br.storePutPart({ i: String(idx), data: job.json.substr(idx * NCHUNK, NCHUNK) }));
+      }
+      p.then(() => br.storePutEnd({ ts: String(job.ts), len: String(job.json.length) }))
+        .then(() => { }, () => { })
+        .then(done, done);
+    } catch (e) { done(); }
+  }
+  function hydrateFromNative() {
+    try {
+      // 用户主动「清空所有数据」只抑制这一次冷启动恢复，随后清掉标记，避免永久失效
+      if (localStorage.getItem(CLEARED_KEY) === '1') { localStorage.removeItem(CLEARED_KEY); return; }
+    } catch (e) { }
+    let br;
+    try { br = getStoreBridge(); } catch (e) { return; }
+    if (!br || typeof br.storeGetMeta !== 'function') return;
+    try {
+      Promise.resolve(br.storeGetMeta()).then((m) => {
+        if (!m || !m.ts) return;
+        const nts = +m.ts || 0, nlen = +m.len || 0, n = +m.n || 0;
+        if (n < 1 || nlen < 2) return;
+        let localRaw = '', lts = 0;
+        try { localRaw = localStorage.getItem(KEY) || ''; lts = +(localStorage.getItem(NATIVE_TS_KEY) || 0) || 0; } catch (e) { }
+        // 本地存档不比原生差就什么都不做，避免每次启动都白白重绘
+        if (localRaw.length && lts >= nts && localRaw.length + 1000 >= nlen) return;
+        let p = Promise.resolve(); let acc = '';
+        for (let i = 0; i < n; i++) {
+          const idx = i;
+          p = p.then(() => br.storeGetPart({ i: String(idx) })).then((r) => { acc += (r && r.data) || ''; });
+        }
+        return p.then(() => {
+          if (acc.length !== nlen || acc.charAt(0) !== '{' || acc.charAt(acc.length - 1) !== '}') return false;
+          return window.__kaoyanRestore(acc, true);
+        });
+      }).catch(() => { });
+    } catch (e) { }
   }
 
   /* ============ v1.53r⑧：原生存档恢复入口（由 Android StoreKeeper 调用） ============
@@ -1139,9 +1251,10 @@
    * 本函数替换内存中的 store 并重绘。页面侧完全不需要插件 / 注入对象 / 异步等待。
    */
   if (typeof window !== 'undefined') {
-    window.__kaoyanRestore = function (raw) {
+    window.__kaoyanRestore = function (raw, fromNative) {
       try {
         store = migrate(JSON.parse(raw));
+        save(fromNative === true);   // 立刻写回 localStorage；从原生恢复时跳过原生写入，避免回环
         const app = document.getElementById('app');
         if (app && !app.classList.contains('hidden')) renderAll();
         else tickCountdown();
@@ -7102,6 +7215,8 @@ ${dl}
   /* ================= 启动 ================= */
   // v1.53r⑧：存档备份/恢复由原生 StoreKeeper 主动完成，页面无需等待任何 bridge。
   initSplash();
+  // v1.53r⑩：等 Capacitor bridge 就绪后，检查原生文件镜像是否比 localStorage 新
+  setTimeout(hydrateFromNative, 600);
     // 安装包（Capacitor）里资源已随包内置，不需要 Service Worker 离线缓存，且 SW 可能缓存旧资源阻碍更新，故跳过。
     if ('serviceWorker' in navigator && !window.Capacitor) {
     window.addEventListener('load', () => {
