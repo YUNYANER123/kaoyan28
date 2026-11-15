@@ -923,16 +923,12 @@
 
   /* ---------- 存储 ---------- */
   const KEY = 'kaoyan28_v1';
-  const NATIVE_TS_KEY = 'kaoyan28_v1_ts';  // v1.53r⑦：localStorage 侧时间戳（不污染 store 结构）
-  let _nativePayload = '';                 // 最近一次 save 生成的原生存档包装串
-  let _nativeDiag = '未检测';               // 存档自检信息（设置页可见）
+  const NATIVE_TS_KEY = 'kaoyan28_v1_ts';  // 时间戳供原生 StoreKeeper 判断是否需要备份（不污染 store 结构）
   let store = load();
 
   function load() {
-    // v1.53r⑦：同步阶段只读 localStorage（首屏即时渲染）。
-    // 原生存档改由 KaoyanBridge 插件异步读取，启动后 hydrateNativeStore() 补载。
-    // 只读 localStorage：原生文件是 {ts,data} 包装串，不能直接 migrate（会被当成 store
-    // 解析成一堆默认值，首屏闪一下空数据）。统一由 hydrateNativeStore() 负责解包补载。
+    // v1.53r⑧：存档的备份/恢复全部由原生 StoreKeeper 用 evaluateJavascript 主动完成，
+    // 页面这里只管 localStorage，首屏即时渲染；恢复后由 window.__kaoyanRestore 重绘。
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) return migrate(JSON.parse(raw));
@@ -1125,129 +1121,33 @@
     return merged;
   }
   function save() {
+    // v1.53r⑧：只写 localStorage。原生 StoreKeeper 每 2 秒 / onPause 会用
+    // evaluateJavascript 主动把 KEY + NATIVE_TS_KEY 备份到 getFilesDir()，页面不调任何 bridge。
     let json = '';
     try { json = JSON.stringify(store); } catch (e) { json = ''; }
-    const ts = Date.now();
-    try { localStorage.setItem(KEY, json); localStorage.setItem(NATIVE_TS_KEY, String(ts)); }
+    try { localStorage.setItem(KEY, json); localStorage.setItem(NATIVE_TS_KEY, String(Date.now())); }
     catch (e) { toast('保存失败：存储空间不足'); }
-    // v1.53r⑦：主存档镜像到原生文件。包装成 {ts,data}，启动时可比时间戳决定谁更新。
-    try { _nativePayload = JSON.stringify({ ts: ts, data: json }); } catch (e) { _nativePayload = ''; }
-    nativeStorePut(_nativePayload);
     pushWidgetSnapshot();
   }
 
-  /* ============ v1.53r⑦：主存档原生文件镜像（走 KaoyanBridge 插件通道） ============
-   * 1.75 失败根因：addJavascriptInterface 写在 super.onCreate() 之后，而 Capacitor 在
-   * super.onCreate() 里已 loadUrl；Android 规定注入对象要等页面下次 reload 才可见，
-   * 所以页面里 window.NativeStore 恒为 undefined，load()/save() 的镜像分支全程空跑。
-   * 现改走已在 super.onCreate() 之前 registerPlugin 的 KaoyanBridge（小组件快照一直靠它，
-   * 确定可用），并在启动时异步补载：原生文件较新则覆盖 localStorage 并重绘。
+  /* ============ v1.53r⑧：原生存档恢复入口（由 Android StoreKeeper 调用） ============
+   * 前两版都假设「JS 能主动调到原生」：r⑥ 的 addJavascriptInterface 因注册在
+   * loadUrl 之后，页面里恒为 undefined；r⑦ 的插件 getStore/putStore 通道同样不可保证，
+   * 用户实测重进 App 数据仍被初始化。
+   * 现改为原生层主动：StoreKeeper 用 WebView.evaluateJavascript 把 localStorage 备份到
+   * getFilesDir()/kaoyan_store.json；冷启动时若原生文件较新，写回 localStorage 后调用
+   * 本函数替换内存中的 store 并重绘。页面侧完全不需要插件 / 注入对象 / 异步等待。
    */
-  function nativeStorePut(payload) {
-    if (!payload) return;
-    // 通道 A：Capacitor 插件（主通道，可靠）
-    try {
-      const br = getBridge();
-      if (br && typeof br.putStore === 'function') {
-        const p = br.putStore({ value: payload });
-        if (p && typeof p.catch === 'function') p.catch(() => {});
-      }
-    } catch (e) {}
-    // 通道 B：同步 JSInterface（若某台设备恰好在 loadUrl 前注入成功，多一层保险）
-    try { if (window.NativeStore && typeof window.NativeStore.putStore === 'function') window.NativeStore.putStore(payload); } catch (e) {}
-  }
-  function nativeStoreGet(cb) {
-    try {
-      if (window.NativeStore && typeof window.NativeStore.getStore === 'function') {
-        const s = window.NativeStore.getStore(); if (s) { _nativeDiag = '同步 JSInterface 读取成功'; cb(s); return; }
-      }
-    } catch (e) {}
-    let br = null;
-    try { br = getBridge(); } catch (e) {}
-    if (!br || typeof br.getStore !== 'function') {
-      _nativeDiag = 'KaoyanBridge.getStore 不可用（APK 版本过旧或插件未就绪）';
-      cb(''); return;
-    }
-    try {
-      const p = br.getStore();
-      if (p && typeof p.then === 'function') {
-        p.then((r) => cb((r && r.value) || ''))
-         .catch((e) => cb('', 'getStore 调用失败：' + ((e && e.message) || e)));
-      } else cb('', 'getStore 未返回 Promise');
-    } catch (e) { cb('', 'getStore 异常：' + ((e && e.message) || e)); }
-  }
-  function parseNativePayload(raw) {
-    // 新格式 {ts,data}；兼容 1.75 可能残留的裸 store JSON
-    try {
-      const o = JSON.parse(raw);
-      if (o && typeof o === 'object' && typeof o.data === 'string') return { ts: +o.ts || 0, data: o.data };
-      if (o && typeof o === 'object' && 'version' in o) return { ts: 0, data: raw };
-    } catch (e) {}
-    return null;
-  }
-  function hydrateNativeStore(tries) {
-    if (tries == null) tries = 6;
-    if (!bridgeSupported()) { _nativeDiag = '网页版：无需原生存档（localStorage 即可）'; return; }
-    nativeStoreGet((raw, err) => {
-      if (err) {
-        _nativeDiag = '⚠️ ' + err + ' —— 请确认已安装最新 APK（1.76+）';
-        if (tries > 0) setTimeout(() => hydrateNativeStore(tries - 1), 400);
-        renderNativeDiag();
-        return;
-      }
-      if (!raw) {
-        let br2 = null; try { br2 = getBridge(); } catch (e) {}
-        const pluginReady = !!(br2 && typeof br2.getStore === 'function');
-        if (!pluginReady) {
-          _nativeDiag = '⚠️ 未检测到 KaoyanBridge.getStore —— 请确认已安装最新 APK（1.76+）';
-          if (tries > 0) setTimeout(() => hydrateNativeStore(tries - 1), 400);
-          renderNativeDiag();
-          return;
-        }
-        // 原生文件为空：绝不用当前 store（可能是被清空后的 defaults）去播种，
-        // 否则插件晚就绪一拍就会把好存档冲掉。只从 localStorage 里真实存在的数据备份一份。
-        let ls = '';
-        try { ls = localStorage.getItem(KEY) || ''; } catch (e) {}
-        if (ls) {
-          let lts = 0; try { lts = +(localStorage.getItem(NATIVE_TS_KEY) || 0) || Date.now(); } catch (e) {}
-          _nativePayload = JSON.stringify({ ts: lts, data: ls });
-          nativeStorePut(_nativePayload);
-          _nativeDiag = '原生存档为空，已从 localStorage 备份一份';
-        } else {
-          _nativeDiag = '原生存档与本地均为空（新安装或旧版数据已丢失）';
-        }
-        if (tries > 0) setTimeout(() => hydrateNativeStore(tries - 1), 400);
-        renderNativeDiag();
-        return;
-      }
-      const p = parseNativePayload(raw);
-      if (!p) { _nativeDiag = '原生存档格式异常'; return; }
-      // 关键：把刚读到的原生快照同步给 _nativePayload，否则随后定时 pushSnapshot
-      // 会用「启动瞬间的旧存档」把原生文件覆盖回去，导致数据倒退。
-      _nativePayload = raw;
-      let localTs = 0;
-      try { localTs = +(localStorage.getItem(NATIVE_TS_KEY) || 0) || 0; } catch (e) {}
-      if (p.ts > localTs && p.data) {
-        try {
-          const d = JSON.parse(p.data);
-          store = migrate(d);
-          localStorage.setItem(KEY, p.data);
-          localStorage.setItem(NATIVE_TS_KEY, String(p.ts));
-          _nativeDiag = '已从原生存档恢复（原生 ts=' + p.ts + ' > 本地 ts=' + localTs + '）';
-          try {
-            const app = document.getElementById('app');
-            if (app && !app.classList.contains('hidden')) { renderPage(curPage); tickCountdown(); }
-          } catch (e) {}
-        } catch (e) { _nativeDiag = '恢复失败：' + ((e && e.message) || e); }
-      } else {
-        _nativeDiag = '本地数据已最新（原生 ts=' + p.ts + ' / 本地 ts=' + localTs + '）';
-      }
-      renderNativeDiag();
-    });
-  }
-  function renderNativeDiag() {
-    const box = document.getElementById('__nativeDiag');
-    if (box) box.textContent = '存档状态：' + _nativeDiag;
+  if (typeof window !== 'undefined') {
+    window.__kaoyanRestore = function (raw) {
+      try {
+        store = migrate(JSON.parse(raw));
+        const app = document.getElementById('app');
+        if (app && !app.classList.contains('hidden')) renderAll();
+        else tickCountdown();
+        return 'ok';
+      } catch (e) { return 'err:' + ((e && e.message) || e); }
+    };
   }
 
   /* ============ 原生桌面小组件 数据桥 ============ */
@@ -1256,9 +1156,9 @@
   let _pushOk = false;      // 至少成功推过一次快照
   let _pushErr = '';        // 最后一次失败原因（用于自检提示）
   function bridgeSupported() {
-    try {
-      return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-    } catch (e) { return false; }
+    // 网页 / PWA 不会注入 window.Capacitor；只要存在就一定是原生 WebView。
+    // 旧版用 isNativePlatform() 判断，某些 Capacitor 运行时缺该方法会导致整条桥空跑。
+    try { return !!window.Capacitor; } catch (e) { return false; }
   }
   function getBridge() {
     if (_bridge) return _bridge;
@@ -1289,13 +1189,9 @@
     try { payload = JSON.stringify(buildWidgetSnapshot()); }
     catch (e) { _pushErr = '构建快照失败：' + (e && e.message); return; }
     try {
-      // v1.53r⑦：顺手把主存档一起带给原生层（Java pushSnapshot 会写入 kaoyan_store.json），
-      // 即使旧 APK 没有 putStore 方法，这条既有通道也能兜住存档。
-      // 关键：只复用 save() 生成的 _nativePayload，绝不在这里另造时间戳或另取 store，
-      // 否则定时刷新快照会用「当前（可能为空）的 store」覆盖掉原生文件里的好数据。
-      const arg = { value: payload };
-      if (_nativePayload) arg.store = _nativePayload;
-      const p = br.pushSnapshot(arg);
+      // v1.53r⑧：存档由原生 StoreKeeper 独占写入，这里只推组件视图快照，
+      // 不再携带 store，避免两条通道并发写同一个文件。
+      const p = br.pushSnapshot({ value: payload });
       if (p && typeof p.then === 'function') {
         p.then(() => { _pushOk = true; }).catch((e) => { _pushErr = (e && e.message) || String(e); });
       } else { _pushOk = true; }
@@ -6734,35 +6630,13 @@ ${dl}
     $('#importBtn').onclick = () => $('#importFile').click();
     $('#importFile').onchange = importData;
     const ipb = $('#importPasteBtn'); if (ipb) ipb.onclick = importPaste;
-    $('#resetBtn').onclick = () => { if (confirm('确定清空所有数据？此操作不可恢复！')) { localStorage.removeItem(KEY); store = defaults(); save(); toast('已清空'); buildSidebar(); goPage('home'); } };
+    $('#resetBtn').onclick = () => { if (confirm('确定清空所有数据？此操作不可恢复！')) { localStorage.removeItem(KEY); store = defaults(); save(); localStorage.setItem('kaoyan28_v1_cleared', '1'); toast('已清空'); buildSidebar(); goPage('home'); } };
 
     // 学科自选 + 每日题量（动态渲染）
     renderSubjectCard();
     renderCountCard();
     renderAiProxyCard();
 
-    // v1.53r⑦：数据存档自检卡片——直接在手机上看到「原生存档通道」是否真的可用。
-    // 便于一眼分辨「新版 APK 已生效」还是「仍装着旧包」，不用再靠猜。
-    let diagCard = document.getElementById('__nativeDiagCard');
-    if (!diagCard) {
-      diagCard = document.createElement('div');
-      diagCard.id = '__nativeDiagCard';
-      diagCard.className = 'card';
-      diagCard.style.cssText = 'margin-top:12px';
-      diagCard.innerHTML = '<div class="card-t">💾 数据存档自检</div>'
-        + '<div id="__nativeDiag" style="font-size:12px;line-height:1.7;color:#5a6b7d;word-break:break-word"></div>'
-        + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
-        + '<button class="gbtn" id="__nativeRecheck" style="flex:1 1 130px">重新检测</button>'
-        + '<button class="gbtn" id="__nativeFlush" style="flex:1 1 130px">立即写入存档</button>'
-        + '</div>';
-      const sec = document.querySelector('[data-page="setting"]');
-      if (sec) sec.appendChild(diagCard);
-      const rc = document.getElementById('__nativeRecheck');
-      if (rc) rc.onclick = () => { _nativeDiag = '正在检测…'; renderNativeDiag(); hydrateNativeStore(2); setTimeout(renderNativeDiag, 900); };
-      const fl = document.getElementById('__nativeFlush');
-      if (fl) fl.onclick = () => { save(); toast('已写入本地存档'); renderNativeDiag(); };
-    }
-    renderNativeDiag();
     store.setTab = 'setting';   // v1.51：点开设置默认显示「设置」面板（非喵上岸）
     applySetTab();   // 每次进入设置都按 store.setTab 校正可见面板
   }
@@ -7226,9 +7100,7 @@ ${dl}
   }
 
   /* ================= 启动 ================= */
-  // v1.53r⑦：启动即异步校验/补载原生存档（Capacitor 插件通道，重启不丢数据）。
-  // 放在 initSplash 之前，开屏页阶段就有足够时间拿到插件返回值；失败会自动重试 6 次。
-  hydrateNativeStore();
+  // v1.53r⑧：存档备份/恢复由原生 StoreKeeper 主动完成，页面无需等待任何 bridge。
   initSplash();
     // 安装包（Capacitor）里资源已随包内置，不需要 Service Worker 离线缓存，且 SW 可能缓存旧资源阻碍更新，故跳过。
     if ('serviceWorker' in navigator && !window.Capacitor) {
