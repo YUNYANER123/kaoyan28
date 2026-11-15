@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v46';   // v46——v1.53r⑥：4 修复。①单词长单词自动缩字号单行(修"超11字母折两行"：app.js 去 word-break/overflow-wrap+canvas 量宽 shrink 到单行)。②计划导出卡片上下留白 +PAD12(app.js)。③侧栏计划猫图标 cat-plan.png 1024² 重发(浏览器/WebView 缓存导致"没改"，sw 升版强制刷新)。④安卓备份丢失根治：新增 NativeStoreBridge(原生 getFilesDir/kaoyan_store.json 文件持久化)+app.js load/save 双向镜像，重启不丢。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v47';   // v47——v1.53r⑦：①侧栏「计划」猫图标换回 v18 原图(黑白棋盘格+戴耳机小猫捧清单)，根因是 r③ 把它误换成大白猫+音符、r⑤ 只是把错图放大；②备份丢失二次根治：1.75 的 addJavascriptInterface 注册在 super.onCreate() 之后，Capacitor 此时已 loadUrl，window.NativeStore 页面里恒为 undefined，镜像全程空跑 → 改走已 registerPlugin 的 KaoyanBridge 插件 getStore/putStore + 原子写 + .bak，app.js 启动时 hydrateNativeStore() 时间戳比对恢复，设置页新增「💾 数据存档自检」。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
