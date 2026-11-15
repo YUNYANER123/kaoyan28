@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v48';   // v48——v1.53r⑧：①按用户要求删除设置页「💾 数据存档自检」卡片；②备份丢失第三次根治：不再让 JS 主动调原生（r⑥ JSInterface 时序、r⑦ 插件通道均失效），改由 Android 原生 StoreKeeper 用 WebView.evaluateJavascript 主动把 localStorage 备份到 getFilesDir()/kaoyan_store.json（2s 轮询 + onPause/onStop flush + 原子写 + .bak），冷启动时若原生文件较新则注入回 localStorage 并调 window.__kaoyanRestore() 重绘。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v49';   // v49——v1.53r⑨：按用户录屏实证，备份 JSON 约 480KB，r⑥/r⑦/r⑧ 都把整份 store 一次性跨 JS↔原生通道传（插件参数 / evaluateJavascript 返回值），Android WebView bridge 对单次大字符串会截断或返回 null，写入全部静默失败、原生文件从未生成。r⑨ 改为分片：所有跨 bridge 字符串 <=12000 字符，逐片串行读写；WebView 改为遍历 View 树获取（不再依赖 getBridge()）；轮询 2s→250ms，保证「导入后立刻清后台」也来得及写第一份存档。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
