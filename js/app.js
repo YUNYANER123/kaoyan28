@@ -927,10 +927,21 @@
 
   function load() {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) return migrate(JSON.parse(raw));
-    } catch (e) { }
-    return defaults();
+      // v1.53r⑥④：优先原生文件存储（安卓重启可靠持久），兜底 localStorage
+      let raw = null;
+      if (window.NativeStore) {
+        try { const ns = window.NativeStore.getStore(); if (ns) raw = ns; } catch (e) {}
+      }
+      if (!raw) {
+        try { const ls = localStorage.getItem(KEY); if (ls) raw = ls; } catch (e) {}
+      }
+      if (!raw) return defaults();
+      const st = migrate(JSON.parse(raw));
+      // 双向镜像：无论哪边有数据，都写回另一边，保证下次启动任意源都有
+      try { if (window.NativeStore) window.NativeStore.putStore(JSON.stringify(st)); } catch (e) {}
+      try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+      return st;
+    } catch (e) { return defaults(); }
   }
   function defaults() {
     return {
@@ -1119,6 +1130,8 @@
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { toast('保存失败：存储空间不足'); }
+    // v1.53r⑥④：同步镜像到原生文件存储（安卓重启可靠持久，根治 localStorage 丢失）
+    try { if (window.NativeStore) window.NativeStore.putStore(JSON.stringify(store)); } catch (e) {}
     pushWidgetSnapshot();
   }
 
@@ -3131,6 +3144,7 @@
       const bx = cardX + 24, bs = 54;
       const nameX = bx + bs + 12, nameMaxW = cardRight - 18 - nameX;
       const nameFont = 33, nameLineH = 52, timeFont = 22, timeH = 38, timePadX = 14;
+      const PAD = 12; // v1.53r⑥③：计划导出卡片上下留白增量（top/bottom 各 +12px）
       // 优先级配色（对齐线上 styles.css .task.p0~p3）：p1=浅黄 / p2=浅绿 / p3=浅蓝 / p0=浅红。
       // 关键：完成态只让文字变灰加删除线，背景保持优先级色（不再把已完成刷成蓝色）。
       const PRI = {
@@ -3161,7 +3175,7 @@
         const ts = planExportTimeStr(x);
         c.font = '700 ' + timeFont + 'px ' + FONT;
         const tw = c.measureText(ts).width + timePadX * 2;
-        const h = 22 + lines.length * nameLineH + 12 + timeH + 22;
+        const h = 22 + PAD + lines.length * nameLineH + 12 + timeH + 22 + PAD;
         return { x, lines, ts, tw, h };
       });
       const listTop0 = topPad + headH + headGap;
@@ -3200,7 +3214,7 @@
         rr(cardX, y, cardW, it.h, 28); c.fillStyle = pr.bg; c.fill();
         c.save(); rr(cardX, y, cardW, it.h, 28); c.clip();
         c.fillStyle = pr.stripe; c.fillRect(cardX, y, 12, it.h); c.restore();
-        rr(bx, y + 22, bs, bs, 16);
+        rr(bx, y + 22 + PAD, bs, bs, 16);
         if (done) {
           c.fillStyle = '#3dbe7b'; c.fill();
           c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round';
@@ -3209,11 +3223,11 @@
         c.fillStyle = done ? '#9aa7b5' : '#253247';
         c.font = '800 ' + nameFont + 'px ' + FONT; c.textAlign = 'left';
         it.lines.forEach((ln, i) => {
-          const ly = y + 46 + i * nameLineH;
+          const ly = y + 46 + PAD + i * nameLineH;
           if (done) { const w = c.measureText(ln).width; c.strokeStyle = '#9aa7b5'; c.lineWidth = 2; c.beginPath(); c.moveTo(nameX, ly - 13); c.lineTo(nameX + w, ly - 13); c.stroke(); }
           c.fillText(ln, nameX, ly);
         });
-        const ty = y + 26 + it.lines.length * nameLineH + 8;
+        const ty = y + 26 + PAD + it.lines.length * nameLineH + 8;
         rr(nameX, ty, it.tw, timeH, 12); c.fillStyle = '#fbe7c8'; c.fill();
         c.fillStyle = '#CF8B32'; c.font = '700 ' + timeFont + 'px ' + FONT;
         c.fillText(it.ts, nameX + timePadX, ty + timeH - 12);
@@ -4205,7 +4219,7 @@ ${dl}
       <div class="word-card">
         <div class="wc-idx">${idx + 1} / ${EN_WORDS.length}</div>
         <div class="wc-fav ${fav ? 'on' : ''}" data-fav>★</div>
-        <div class="wc-w" style="font-size:${w.w.length <= 17 ? 32 : Math.max(20, 32 - (w.w.length - 17) * 0.8)}px">${esc(w.w)}</div>
+        <div class="wc-w" style="font-size:32px">${esc(w.w)}</div>
         ${w.p ? `<div class="wc-p">${esc(w.p)}</div>` : ''}
         <div class="wc-m ${revealed ? '' : 'wc-hide'}" data-mean>${esc(w.m)}</div>
         ${ex.e ? `<div class="wc-e ${revealed ? '' : 'wc-hide'}" data-eg>${esc(ex.e)}</div>` : ''}
@@ -4230,6 +4244,18 @@ ${dl}
       <button class="drill-enter spell-enter" data-spellpage>✍️ 随机拼写</button>
       ${allDone ? `<button class="refresh-btn" data-w="refresh">🔄 全部背完啦！一键从头再背</button>` : ''}`;
 
+    // v1.53r⑥②：长单词自动缩小字号，确保单行显示（不再强制折行；jsdom 下 clientWidth=0 自动跳过）
+    (function fitWord() {
+      const el = host.querySelector('.wc-w');
+      if (!el) return;
+      const word = (el.textContent || '').trim();
+      if (!word) return;
+      const avail = (el.clientWidth || (host.clientWidth * 0.96) || 600);
+      let size = 32;
+      el.style.whiteSpace = 'nowrap';
+      el.style.fontSize = size + 'px';
+      while (size > 16 && el.scrollWidth > avail) { size -= 1; el.style.fontSize = size + 'px'; }
+    })();
     // 搜索栏
     const sInp = host.querySelector('#wordSearch');
     const doSearch = () => {
@@ -4314,7 +4340,7 @@ ${dl}
     if (_wcClearStyleInjected) return; _wcClearStyleInjected = true;
     const st = document.createElement('style');
     st.textContent = `
-.wc-w{word-break:break-word;overflow-wrap:anywhere;max-width:94%;margin:14px auto 6px;line-height:1.25;text-align:center;font-weight:800;color:#222}
+.wc-w{white-space:nowrap;max-width:96%;margin:14px auto 6px;line-height:1.25;text-align:center;font-weight:800;color:#222}
 .wc-today-row{display:flex;align-items:center;gap:8px;margin:9px 2px 2px}
 .wc-today-row .wc-today{flex:1 1 auto;min-width:0;margin:0;font-size:11px;padding:7px 10px}
 .wc-trash{flex:0 0 auto;width:36px;height:36px;box-sizing:border-box;border:1.5px solid #e0486a;background:#ffd2dc;border-radius:12px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#c94f6d;padding:0}

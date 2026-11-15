@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v45';   // v45——v1.53r⑤：5 bug 修复。恢复英语写作/阅读/翻译/单词详情数据(EN_SENTENCES等6数组从v18 f5d1c840ee 还原追加到 data-en.js 末尾)、cat-plan.png 改 1024×1024 正方形(修侧栏图标溢出)、长单词字号阈值调整(app.js)、计划导出卡片留白上下对称(app.js)。data-en.js 与 icons 均改→升 v45。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v46';   // v46——v1.53r⑥：4 修复。①单词长单词自动缩字号单行(修"超11字母折两行"：app.js 去 word-break/overflow-wrap+canvas 量宽 shrink 到单行)。②计划导出卡片上下留白 +PAD12(app.js)。③侧栏计划猫图标 cat-plan.png 1024² 重发(浏览器/WebView 缓存导致"没改"，sw 升版强制刷新)。④安卓备份丢失根治：新增 NativeStoreBridge(原生 getFilesDir/kaoyan_store.json 文件持久化)+app.js load/save 双向镜像，重启不丢。index.html 与 js/app.js 仍 network-first。
 
 const ASSETS = [
   './',
