@@ -2409,7 +2409,7 @@
 /* v1.53p：导出图片预览（长按保存 / 下载兜底） */
 .plan-img-wrap{max-height:60vh;overflow:auto;border-radius:14px;background:rgba(46,144,232,.06);padding:8px}
 .plan-img{width:100%;height:auto;display:block;border-radius:10px}
-.plan-img-dl{display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:6px}
+.plan-img-dl{display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:10px;width:100%;height:44px;border:none;border-radius:12px;font-size:16px;font-weight:900;color:#2f80ed;background:#eaf3ff;cursor:pointer}
 /* 🔍 移入工具行后，头部卡右侧只剩进度圈——上下居中（覆盖 styles.css 的 column 默认顶部对齐） */
 .ph-right{justify-content:center}`;
     document.head.appendChild(st);
@@ -3344,11 +3344,13 @@
         rr(cardX, y, cardW, it.h, 28); c.fillStyle = pr.bg; c.fill();
         c.save(); rr(cardX, y, cardW, it.h, 28); c.clip();
         c.fillStyle = pr.stripe; c.fillRect(cardX, y, 12, it.h); c.restore();
-        rr(bx, y + 22 + PAD, bs, bs, 16);
+        const boxTop = y + 22 + PAD;
+        rr(bx, boxTop, bs, bs, 16);
         if (done) {
           c.fillStyle = '#3dbe7b'; c.fill();
-          c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round';
-          c.beginPath(); c.moveTo(bx + 14, y + 22 + 28); c.lineTo(bx + 24, y + 22 + 39); c.lineTo(bx + 41, y + 22 + 17); c.stroke();
+          // v1.53r⑪：对勾三点相对方框绘制（旧版漏加 PAD 导致对勾偏在框上方），居中显示
+          c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round'; c.lineJoin = 'round';
+          c.beginPath(); c.moveTo(bx + 14, boxTop + 30); c.lineTo(bx + 24, boxTop + 40); c.lineTo(bx + 41, boxTop + 20); c.stroke();
         } else { c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#cfd9e6'; c.lineWidth = 4; c.stroke(); }
         c.fillStyle = done ? '#9aa7b5' : '#253247';
         c.font = '800 ' + nameFont + 'px ' + FONT; c.textAlign = 'left';
@@ -3365,25 +3367,40 @@
         y += it.h + 16;
       });
       if (!list.length) { c.fillStyle = '#9fb0c4'; c.font = '700 32px ' + FONT; c.textAlign = 'center'; c.fillText('这一天还没有计划', W / 2, listTop0 + 50); c.textAlign = 'left'; }
-      // 水印：右下角透明小白猫（用户提供的戴耳机小猫 PNG），不做「喵上岸」文字
+      // 水印：右下角透明小猫——v1.53r⑪ 换回用户提供的白色线稿戴耳机小猫 PNG（cat-print.png）。
+      // 侧栏图标仍是 cat-plan.png（v18 棋盘猫，用户已确认修好），两者互不干扰。
+      // 原图 1080×737 带透明留白，绘制时先裁掉透明边再等比缩放，避免被压扁变形。
       const drawMascot = (img) => {
-        const mw = 58, mh = 58, mx = cardRight - mw - 14, my = H - mh - 18;
-        if (img) { c.drawImage(img, mx, my, mw, mh); }
+        const BOX = 64, mx = cardRight - BOX - 12, my = H - BOX - 16;
+        if (!img) return;
+        try {
+          const oc = document.createElement('canvas'); oc.width = img.naturalWidth; oc.height = img.naturalHeight;
+          const ox = oc.getContext('2d'); ox.drawImage(img, 0, 0);
+          const px = ox.getImageData(0, 0, oc.width, oc.height).data;
+          let x0 = oc.width, y0 = oc.height, x1 = 0, y1 = 0;
+          for (let yy = 0; yy < oc.height; yy++) for (let xx = 0; xx < oc.width; xx++) {
+            if (px[(yy * oc.width + xx) * 4 + 3] > 12) {
+              if (xx < x0) x0 = xx; if (xx > x1) x1 = xx;
+              if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
+            }
+          }
+          if (x1 <= x0 || y1 <= y0) { c.drawImage(img, mx, my, BOX, BOX); return; }
+          const cw = x1 - x0 + 1, ch = y1 - y0 + 1, s = Math.min(BOX / cw, BOX / ch);
+          const dw = cw * s, dh = ch * s;
+          c.drawImage(oc, x0, y0, cw, ch, mx + (BOX - dw) / 2, my + (BOX - dh) / 2, dw, dh);
+        } catch (e) { c.drawImage(img, mx, my, BOX, BOX); }
       };
       const doExport = () => {
         try {
           const dataUrl = cv.toDataURL('image/jpeg', 0.92);
           const fname = '喵上岸计划_' + ds + '.jpg';
-          const br = getBridge();
-          const nativeSave = !!(br && typeof br.saveImage === 'function');
-          if (nativeSave) {
-            const pSave = br.saveImage({ base64: dataUrl.split(',')[1], filename: fname });
-            if (pSave && typeof pSave.then === 'function') {
-              pSave.then((r) => { if (r && r.ok) toast('已保存到相册 🖼️'); else toast('保存失败，可长按图片保存'); showPlanImgPreview(dataUrl, fname, true); }).catch(() => { toast('保存失败，可长按图片保存'); showPlanImgPreview(dataUrl, fname, true); });
-            } else { toast('已保存到相册 🖼️'); showPlanImgPreview(dataUrl, fname, true); }
-          } else {
-            showPlanImgPreview(dataUrl, fname, false);
-          }
+          // v1.53r⑪：不再用 typeof br.saveImage 判断原生能力——Capacitor registerPlugin 返回 Proxy，
+          // 任意方法访问都是 function，旧判断导致「假原生」隐藏下载按钮 + 假「已保存」提示。
+          // 改为真正调用并看返回：原生 App 里 saveImage 走 MediaStore 存相册；网页/PWA 无插件，走预览 + 下载。
+          nativeSaveImage(dataUrl, fname).then((ok) => {
+            showPlanImgPreview(dataUrl, fname, ok, nativeSaveImage);
+            if (ok) toast('已保存到相册 🖼️');
+          });
         } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
       };
       let _mascot = null;
@@ -3392,20 +3409,69 @@
         const img = new Image();
         img.onload = () => { _mascot = img; cb(img); };
         img.onerror = () => { cb(null); };
-        img.src = 'icons/cat-plan.png';
+        img.src = 'icons/cat-print.png';
       };
       loadMascot((img) => { drawMascot(img); doExport(); });
     } catch (e) { toast('导出失败：' + ((e && e.message) || e)); }
   }
-  // v1.53r：计划图片预览。「↓下载图片」按钮仅在非原生 App（无 saveImage 能力）时显示；原生 App 已直接写相册，该按钮纯属摆设，故隐藏。
-  function showPlanImgPreview(dataUrl, fname, nativeSave) {
-    const hint = nativeSave ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）' : '长按图片可保存到相册；电脑上可点下方按钮下载';
-    const dl = nativeSave ? '' : '      <a class="gbtn plan-img-dl" download="' + fname + '" href="' + dataUrl + '">⬇ 下载图片</a>';
+  // v1.53r⑪：真正尝试调用原生 saveImage，返回 Promise<boolean>。Proxy 里任意方法都是 function，
+  // 所以必须实际调用并按 resolve 的 ok 判断，不能靠 typeof 能力探测。
+  function nativeSaveImage(dataUrl, fname) {
+    return new Promise((resolve) => {
+      let br = null;
+      try { br = getBridge(); } catch (e) { }
+      if (!br || typeof br.saveImage !== 'function') { resolve(false); return; }
+      try {
+        const p = br.saveImage({ base64: dataUrl.split(',')[1], filename: fname });
+        if (p && typeof p.then === 'function') {
+          p.then((r) => resolve(!!(r && r.ok))).catch(() => resolve(false));
+        } else resolve(true); // 旧同步桥：无返回值即视为已提交
+      } catch (e) { resolve(false); }
+    });
+  }
+  // v1.53r⑪：计划图片预览。原生端直接存相册，但「下载/再存」按钮与长按始终可用（不再隐藏），
+  // 长按需 preventDefault 抑制 WebView 默认上下文菜单，避免与原生存档冲突。
+  function showPlanImgPreview(dataUrl, fname, nativeSave, saveFn) {
+    const hint = nativeSave
+      ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）；可长按图片再存一份'
+      : '长按图片可保存到相册；电脑上可点下方按钮下载';
     openModal('🖨️ 计划图片', `
-      <div class="plan-img-wrap"><img class="plan-img" src="${dataUrl}" alt="当日计划图片"></div>
+      <div class="plan-img-wrap"><img class="plan-img" id="planImgPreview" src="${dataUrl}" alt="当日计划图片"></div>
       <div class="hint" style="margin:10px 0 8px">${hint}</div>
-${dl}
+      <button class="gbtn plan-img-dl" id="planImgSaveBtn">${nativeSave ? '💾 再保存一份到相册' : '⬇ 下载图片'}</button>
     `, 'lg');
+    const save = saveFn || nativeSaveImage;
+    const btn = document.getElementById('planImgSaveBtn');
+    if (btn) btn.onclick = () => {
+      if (nativeSave) {
+        save(dataUrl, fname).then((ok) => toast(ok ? '已保存到相册 🖼️' : '保存失败，请长按图片保存'));
+      } else {
+        const a = document.createElement('a'); a.href = dataUrl; a.download = fname;
+        document.body.appendChild(a); a.click(); a.remove();
+        save(dataUrl, fname).then((ok) => { if (ok) toast('已保存到相册 🖼️'); }); // 原生环境顺带再存相册
+      }
+    };
+    const img = document.getElementById('planImgPreview');
+    if (img) {
+      let lpTimer = null, lpFired = false;
+      const start = (e) => {
+        lpFired = false;
+        if (e.cancelable) e.preventDefault();
+        lpTimer = setTimeout(() => {
+          lpFired = true;
+          save(dataUrl, fname).then((ok) => toast(ok ? '已保存到相册 🖼️' : '保存失败，请用下方按钮下载'));
+        }, 550);
+      };
+      const end = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+      img.addEventListener('touchstart', start, { passive: false });
+      img.addEventListener('touchend', end);
+      img.addEventListener('touchmove', end);
+      img.addEventListener('touchcancel', end);
+      img.addEventListener('mousedown', start);
+      img.addEventListener('mouseup', end);
+      img.addEventListener('mouseleave', end);
+      img.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
   }
   // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
   function openPlanSearch() {

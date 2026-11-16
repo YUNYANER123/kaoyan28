@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v50';   // v1.53r⑩：真实根因是 r④ 新增的 const WORDS_VER / LEGACY_LISTS 声明位置在「let store = load()」之后，冷启动顶层执行 load() → migrate() → reanchorWords() 访问暂时性死区(TDZ)常量，抛 ReferenceError 被空 catch 吞掉，直接返回 defaults() → 全部归零。r⑩ 把常量上移、load() 增加按原始存档兜底、save() 失败改为可见弹窗，并新增 JS 主动分片镜像到原生文件。index.html 与 js/app.js 仍 network-first。
+const CACHE = 'kaoyan28-v51';   // v1.53r⑪：计划图片保存重建（恢复原生 saveImage/MediaStore 写相册 + 预览下载/长按均可）+ 水印换回用户 PNG(cat-print.png) + 对勾居中；词库修 65 个粘连词/28 处中文空格。index.html/js/app.js/js/data-en.js network-first。
 
 const ASSETS = [
   './',
@@ -20,6 +20,7 @@ const ASSETS = [
   './icons/cat-splash.png',
   './icons/cat-home.png',
   './icons/cat-plan.png',
+  './icons/cat-print.png',
   './icons/cat-english.png',
   './icons/cat-math.png',
   './icons/cat-major.png',
@@ -44,9 +45,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   const isNav = e.request.mode === 'navigate';
   const isAppJs = /\/js\/app\.js($|\?)/.test(url.pathname);
-  // index.html / js/app.js：network-first——先试网络，失败再回退缓存。
+  const isDataEn = /\/js\/data-en\.js($|\?)/.test(url.pathname);
+  // index.html / js/app.js / js/data-en.js：network-first——先试网络，失败再回退缓存。
   // 这样每次重新部署后，手机端（已安装 PWA）刷新一次即可拿到新版，不再被旧缓存卡住。
-  if (isNav || isAppJs) {
+  if (isNav || isAppJs || isDataEn) {
     e.respondWith(
       fetch(e.request).then((res) => {
         if (res && res.status === 200) {
