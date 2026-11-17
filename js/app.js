@@ -931,6 +931,7 @@
   // migrate() → reanchorWords() 访问尚在暂时性死区(TDZ)的 const → ReferenceError →
   // 被 load() 的空 catch 吞掉 → defaults() → 用户重进 App 后数据全归零。
   const WORDS_VER = '8767-v1.53r12';   // v1.53r⑫：去重 47 个重复词条（8814→8767），旧存档需按 LEGACY_WORDS_8814 重锚定
+  const LEARN_REPAIR_VER = 'r14-daily-backfill-v1'; // v1.53r⑭：修复 r⑫ 损坏存档「首页累计有数、单词页 learned 空」
   const LEGACY_LISTS = {
     8814: (typeof LEGACY_WORDS_8814 !== 'undefined' ? LEGACY_WORDS_8814 : null),
     9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null),
@@ -1081,6 +1082,33 @@
     if (w.idx < 0 || w.idx >= EN_WORDS.length) w.idx = 0;
     return dropped;
   }
+  // v1.53r⑭：r⑫ 的 LEGACY_WORDS_8814 漏写 split(" ") 时，旧备份的
+  // learned/favs/rounds/ultimate/idx 会被全部映射空；但 dailyStudy 的每日 wordCount 没坏，
+  // 所以首页仍显示累计 5452，单词页却按 learned.length 显示 0。
+  // 这里只做一次受控回填：仅当单词进度整体为空，且历史每日背词数 > 0，且没有“主动清除”标记。
+  // 旧版背词是顺序推进，按累计数量回填前 N 个下标；主动清除会写 learnRepairVer，避免被回填复活。
+  function repairLearnedFromDaily(w, s) {
+    if (!w || !s) return 0;
+    if (!Array.isArray(w.learned)) w.learned = [];
+    if (w.learnedRepairVer === LEARN_REPAIR_VER) return 0;
+    if (w.learned.length > 0) return 0;
+    const favN = Array.isArray(w.favs) ? w.favs.length : 0;
+    const roundN = (Array.isArray(w.rounds) ? w.rounds : [[], [], []]).reduce((n, r) => n + (Array.isArray(r) ? r.length : 0), 0);
+    const ultN = Array.isArray(w.ultimate) ? w.ultimate.length : 0;
+    // 还有星标/三轮进度，说明不是 r⑫ 那种“整段映射空”，不要覆盖用户真实数据。
+    if (favN || roundN || ultN) return 0;
+    let total = 0;
+    Object.values(s.dailyStudy || {}).forEach(function (x) {
+      const v = Number((x && x.en && x.en.wordCount) || 0);
+      total += (isFinite(v) && v > 0) ? Math.floor(v) : 0;
+    });
+    if (total <= 0) { w.learnedRepairVer = LEARN_REPAIR_VER; return 0; }
+    const n = Math.min(total, EN_WORDS.length);
+    for (let i = 0; i < n; i++) w.learned.push(i);
+    w.idx = Math.min(n, EN_WORDS.length - 1);
+    w.learnedRepairVer = LEARN_REPAIR_VER;
+    return n;
+  }
   function migrate(s) {
     const d = defaults();
     const merged = Object.assign(d, s, {
@@ -1145,6 +1173,7 @@
     }
     // v1.53r④：跨版本进度重锚定（词表删词/重排后，按位置下标的旧备份会错位；用内嵌旧词表还原成单词再映射新位置）
     reanchorWords(merged.words);
+    repairLearnedFromDaily(merged.words, merged);
     merged.words.wordsVer = WORDS_VER;
     return merged;
   }
@@ -4512,7 +4541,7 @@
     const spBtn = host.querySelector('[data-spellpage]');
     if (spBtn) spBtn.onclick = () => openSpellPage();
     const rfb = host.querySelector('[data-w="refresh"]');
-    if (rfb) rfb.onclick = () => { ws.idx = 0; ws.learned = []; save(); renderEnWord(); toast('已重置，从头开始背 🐱', 'main'); };
+    if (rfb) rfb.onclick = () => { ws.idx = 0; ws.learned = []; ws.learnedRepairVer = LEARN_REPAIR_VER; save(); renderEnWord(); toast('已重置，从头开始背 🐱', 'main'); };
     // v1.53m④：统计框右侧垃圾桶 → 两级确认清除单词数据
     const clrBtn = host.querySelector('[data-w="clearwords"]');
     if (clrBtn) clrBtn.onclick = () => openWordClearMenu();
@@ -4582,6 +4611,7 @@
       const ws2 = store.words;
       ws2.idx = 0;
       ws2.learned = [];
+      ws2.learnedRepairVer = LEARN_REPAIR_VER;
       if (full) { ws2.favs = []; ws2.rounds = [[], [], []]; ws2.ultimate = []; ws2.revealed = []; }
       save();
       closeWordModal();

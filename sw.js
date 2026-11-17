@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v53';   // v1.53r⑬：修复导入备份后进度归零——LEGACY_WORDS_8814 漏写 .split(' ') 导致是字符串不是数组，reanchorWords 逐位取到单个字符使 learned 全丢。data-en.js network-first。
+const CACHE = 'kaoyan28-v54';   // v1.53r⑭：修复首页累计有数但单词页累计已学 0——r⑫ 损坏存档的 learned 全空时按 dailyStudy 历史背词数一次性回填。data-en.js network-first。
 
 const ASSETS = [
   './',
