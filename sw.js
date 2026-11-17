@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v52';   // v1.53r⑫：词库去重(8814→8767)+进度重锚定(LEGACY_WORDS_8814)；取消计划图片长按保存；设置页显示真实 APK 版本号(getAppVersion)。js/data-en.js 仍 network-first。
+const CACHE = 'kaoyan28-v53';   // v1.53r⑬：修复导入备份后进度归零——LEGACY_WORDS_8814 漏写 .split(' ') 导致是字符串不是数组，reanchorWords 逐位取到单个字符使 learned 全丢。data-en.js network-first。
 
 const ASSETS = [
   './',
