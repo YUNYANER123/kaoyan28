@@ -930,8 +930,12 @@
   // r④ 把它们放在 reanchorWords 附近（本文件后面 ~4800 字符），而 load() 是顶层立即执行的：
   // migrate() → reanchorWords() 访问尚在暂时性死区(TDZ)的 const → ReferenceError →
   // 被 load() 的空 catch 吞掉 → defaults() → 用户重进 App 后数据全归零。
-  const WORDS_VER = '8814-v1.53r';
-  const LEGACY_LISTS = { 9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null), 9232: (typeof LEGACY_WORDS_9232 !== 'undefined' ? LEGACY_WORDS_9232 : null) };
+  const WORDS_VER = '8767-v1.53r12';   // v1.53r⑫：去重 47 个重复词条（8814→8767），旧存档需按 LEGACY_WORDS_8814 重锚定
+  const LEGACY_LISTS = {
+    8814: (typeof LEGACY_WORDS_8814 !== 'undefined' ? LEGACY_WORDS_8814 : null),
+    9205: (typeof LEGACY_WORDS_9205 !== 'undefined' ? LEGACY_WORDS_9205 : null),
+    9232: (typeof LEGACY_WORDS_9232 !== 'undefined' ? LEGACY_WORDS_9232 : null)
+  };
   let _saveError = '';
   let _lastLoadError = '';
   let store = load();
@@ -1048,9 +1052,15 @@
     // 旧版(1.69 等无戳，或戳不一致)备份一律走重锚定：用内嵌旧词表把旧下标还原成单词再映射到当前位置。
     if ((w.wordsVer || '') === WORDS_VER) return 0;
     let legacy = null;
-    if (maxIdx <= 9205) legacy = LEGACY_LISTS[9205];
-    else if (maxIdx <= 9232) legacy = LEGACY_LISTS[9232];
-    else legacy = LEGACY_LISTS[9232];
+    // v1.53r⑫：优先按旧戳选对应旧词表——8814 戳的备份下标是 8814 词表的位置，
+    // 绝不能落进下面 maxIdx<=9205 的分支误用 9205 词表（会把进度全映射错）。
+    const oldVer = (w.wordsVer || '');
+    if (oldVer.indexOf('8814') === 0) legacy = LEGACY_LISTS[8814];
+    if (!legacy) {
+      if (maxIdx <= 9205) legacy = LEGACY_LISTS[9205];
+      else if (maxIdx <= 9232) legacy = LEGACY_LISTS[9232];
+      else legacy = LEGACY_LISTS[9232];
+    }
     if (!legacy || !legacy.length) return 0;
     const curMap = {}; const curMapL = {};
     for (let i = 0; i < EN_WORDS.length; i++) { const k = EN_WORDS[i].w; if (!(k in curMap)) curMap[k] = i; const kl = k.toLowerCase(); if (!(kl in curMapL)) curMapL[kl] = i; }
@@ -3429,12 +3439,12 @@
       } catch (e) { resolve(false); }
     });
   }
-  // v1.53r⑪：计划图片预览。原生端直接存相册，但「下载/再存」按钮与长按始终可用（不再隐藏），
-  // 长按需 preventDefault 抑制 WebView 默认上下文菜单，避免与原生存档冲突。
+  // v1.53r⑫：计划图片预览。按用户要求取消「长按再次保存」——只保留下方「下载/再存」按钮，
+  // 不再给图片绑定任何长按/右键保存事件（避免误触重复写相册）。
   function showPlanImgPreview(dataUrl, fname, nativeSave, saveFn) {
     const hint = nativeSave
-      ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）；可长按图片再存一份'
-      : '长按图片可保存到相册；电脑上可点下方按钮下载';
+      ? '✅ 已保存到相册（相册 → Pictures/MiaoShangAn）'
+      : '电脑上可点下方按钮下载';
     openModal('🖨️ 计划图片', `
       <div class="plan-img-wrap"><img class="plan-img" id="planImgPreview" src="${dataUrl}" alt="当日计划图片"></div>
       <div class="hint" style="margin:10px 0 8px">${hint}</div>
@@ -3444,34 +3454,13 @@
     const btn = document.getElementById('planImgSaveBtn');
     if (btn) btn.onclick = () => {
       if (nativeSave) {
-        save(dataUrl, fname).then((ok) => toast(ok ? '已保存到相册 🖼️' : '保存失败，请长按图片保存'));
+        save(dataUrl, fname).then((ok) => toast(ok ? '已保存到相册 🖼️' : '保存失败'));
       } else {
         const a = document.createElement('a'); a.href = dataUrl; a.download = fname;
         document.body.appendChild(a); a.click(); a.remove();
         save(dataUrl, fname).then((ok) => { if (ok) toast('已保存到相册 🖼️'); }); // 原生环境顺带再存相册
       }
     };
-    const img = document.getElementById('planImgPreview');
-    if (img) {
-      let lpTimer = null, lpFired = false;
-      const start = (e) => {
-        lpFired = false;
-        if (e.cancelable) e.preventDefault();
-        lpTimer = setTimeout(() => {
-          lpFired = true;
-          save(dataUrl, fname).then((ok) => toast(ok ? '已保存到相册 🖼️' : '保存失败，请用下方按钮下载'));
-        }, 550);
-      };
-      const end = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
-      img.addEventListener('touchstart', start, { passive: false });
-      img.addEventListener('touchend', end);
-      img.addEventListener('touchmove', end);
-      img.addEventListener('touchcancel', end);
-      img.addEventListener('mousedown', start);
-      img.addEventListener('mouseup', end);
-      img.addEventListener('mouseleave', end);
-      img.addEventListener('contextmenu', (e) => e.preventDefault());
-    }
   }
   // 🔍 计划搜索：按关键词搜计划名 / 备注，点击跳转到当天（跨天 → 第一天）
   function openPlanSearch() {

@@ -1,5 +1,5 @@
 /* 喵上岸 28考研工作台 — Service Worker（离线缓存 + 安装支持） */
-const CACHE = 'kaoyan28-v51';   // v1.53r⑪：计划图片保存重建（恢复原生 saveImage/MediaStore 写相册 + 预览下载/长按均可）+ 水印换回用户 PNG(cat-print.png) + 对勾居中；词库修 65 个粘连词/28 处中文空格。index.html/js/app.js/js/data-en.js network-first。
+const CACHE = 'kaoyan28-v52';   // v1.53r⑫：词库去重(8814→8767)+进度重锚定(LEGACY_WORDS_8814)；取消计划图片长按保存；设置页显示真实 APK 版本号(getAppVersion)。js/data-en.js 仍 network-first。
 
 const ASSETS = [
   './',
